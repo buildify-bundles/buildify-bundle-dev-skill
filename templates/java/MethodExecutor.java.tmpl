@@ -1,0 +1,38 @@
+package {{PACKAGE}}.methods;
+
+import cn.buildify.bundle.api.ExecutorContext;
+import cn.buildify.bundle.api.MethodExecutor;
+import lombok.extern.slf4j.Slf4j;
+
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.CompletableFuture;
+
+@Slf4j
+public class {{METHOD_CLASS}} implements MethodExecutor {
+
+    /** 必须与表单 typeOptions.loadOptions.method 完全一致 */
+    @Override
+    public String getMethodName() {
+        return "{{METHOD_NAME}}";
+    }
+
+    @Override
+    public CompletableFuture<Object> execute(ExecutorContext context) {
+        return CompletableFuture.supplyAsync(() -> {
+            // 凭证字段（框架已解密，不要写入日志）
+            // 字段名与 credentials/*.json 的 properties[].name 一致
+            String host = context.requireCredentialString("host");
+            int port = context.getCredentialInteger("port", 443);
+
+            return fetchOptions(host, port).stream()
+                    .map(item -> Map.<String, Object>of("label", item, "value", item))
+                    .toList();
+        });
+    }
+
+    private List<String> fetchOptions(String host, int port) {
+        // TODO 实现真实的查询逻辑
+        return List.of();
+    }
+}

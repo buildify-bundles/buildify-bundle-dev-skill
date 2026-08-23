@@ -1,0 +1,25 @@
+{
+  "defaultValue": {
+    "timeout": 5000
+  },
+  "properties": [
+    {
+      "name": "path",
+      "label": "监听路径",
+      "uiComponent": "Input",
+      "required": true,
+      "hint": "修改后节点将自动重启并重新注册路由",
+      "placeholder": "/webhook/my-path"
+    },
+    {
+      "name": "timeout",
+      "label": "超时（毫秒）",
+      "uiComponent": "InputNumber",
+      "typeOptions": {
+        "min": 100,
+        "max": 60000,
+        "style": "width: 200px"
+      }
+    }
+  ]
+}

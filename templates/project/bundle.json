@@ -1,0 +1,20 @@
+{
+  "bundleName": "{{BUNDLE_NAME}}",
+  "groups": [
+    {
+      "label": "{{GROUP_LABEL}}",
+      "nodes": [
+        {
+          "icon": "{{NODE_NAME}}.svg",
+          "name": "{{NODE_NAME}}",
+          "label": "{{NODE_LABEL}}",
+          "summary": "发起 HTTP 请求",
+          "parameters": {
+            "method": "GET",
+            "timeout": 30
+          }
+        }
+      ]
+    }
+  ]
+}

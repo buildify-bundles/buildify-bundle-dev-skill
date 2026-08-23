@@ -1,0 +1,76 @@
+package {{PACKAGE}}.nodes;
+
+import cn.buildify.bundle.api.Context;
+import cn.buildify.bundle.api.FlowNode;
+import cn.buildify.bundle.api.FlowNodeDescription;
+import cn.buildify.bundle.api.Relation;
+import cn.buildify.bundle.api.json.JsonValue;
+import cn.buildify.bundle.api.json.JsonValueFactory;
+import cn.buildify.bundle.api.message.Message;
+import cn.buildify.bundle.api.status.NodeStatus;
+import lombok.extern.slf4j.Slf4j;
+
+import java.util.concurrent.ScheduledFuture;
+
+@Slf4j
+@FlowNodeDescription(
+        name = "{{NODE_NAME}}",
+        propertiesFile = "properties/{{NODE_NAME}}.json",
+        isTrigger = true,
+        hasInput = false)
+public class {{NODE_NAME}} implements FlowNode {
+
+    private ScheduledFuture<?> scheduledFuture;
+
+    @Override
+    public void initialize(Context context, JsonValue parameters) {
+        String cron = parameters.path("cron").asText("0 */5 * * * ?");
+        String timezone = parameters.path("timezone").asText("Asia/Shanghai");
+
+        if (context.isTest()) {
+            // 测试模式：立即触发一次，不注册定时任务
+            triggerOnce(context);
+            return;
+        }
+
+        this.scheduledFuture = context.schedule(() -> triggerOnce(context), cron, timezone);
+        context.setStatus(NodeStatus.builder().color("green").text("已调度").build());
+    }
+
+    /** cron 变化需要取消旧任务重新注册，交给重启流程处理 */
+    @Override
+    public boolean isRestartRequired(JsonValue newParameters, JsonValue oldParameters) {
+        return !newParameters.path("cron").equals(oldParameters.path("cron"))
+                || !newParameters.path("timezone").equals(oldParameters.path("timezone"));
+    }
+
+    @Override
+    public void onMsg(Context context, Message<?> message) {
+        // 触发器无输入连接点，不会收到消息
+    }
+
+    private void triggerOnce(Context context) {
+        try {
+            // 触发器 payload 直接放根级业务字段，禁止再包一层 output
+            JsonValue payload = JsonValueFactory.objectNode()
+                    .put("triggeredAt", System.currentTimeMillis());
+
+            // 触发器发出的每条消息都必须用 createTriggerMessage 创建
+            Message<JsonValue> msg = context.createTriggerMessage(payload);
+            context.tellNext(msg, Relation.SUCCESS_NAME);
+            context.complete(msg);
+        } catch (Exception e) {
+            log.error("[{{NODE_NAME}}] 触发失败", e);
+            context.setStatus(NodeStatus.builder().color("red").text("触发失败").build());
+        }
+    }
+
+    /** 幂等释放：未取消的定时任务会钉住 ClassLoader */
+    @Override
+    public void destroy(Context context) {
+        if (scheduledFuture != null) {
+            scheduledFuture.cancel(true);
+            scheduledFuture = null;
+        }
+    }
+}

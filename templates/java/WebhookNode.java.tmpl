@@ -1,0 +1,101 @@
+package {{PACKAGE}}.nodes;
+
+import cn.buildify.bundle.api.Context;
+import cn.buildify.bundle.api.FlowNode;
+import cn.buildify.bundle.api.FlowNodeDescription;
+import cn.buildify.bundle.api.FlowNodeException;
+import cn.buildify.bundle.api.Relation;
+import cn.buildify.bundle.api.http.HttpMethod;
+import cn.buildify.bundle.api.http.Route;
+import cn.buildify.bundle.api.http.RoutingContext;
+import cn.buildify.bundle.api.json.JsonValue;
+import cn.buildify.bundle.api.json.JsonValueFactory;
+import cn.buildify.bundle.api.message.Message;
+import cn.buildify.bundle.api.status.NodeStatus;
+import lombok.extern.slf4j.Slf4j;
+
+import java.util.Set;
+
+@Slf4j
+@FlowNodeDescription(
+        name = "{{NODE_NAME}}",
+        propertiesFile = "properties/{{NODE_NAME}}.json",
+        isTrigger = true,
+        hasInput = false)
+public class {{NODE_NAME}} implements FlowNode {
+
+    private Route route;
+
+    @Override
+    public void initialize(Context context, JsonValue parameters) {
+        String path = parameters.path("path").asText(null);
+        if (path == null || path.isBlank()) {
+            throw new FlowNodeException("MISSING_PATH", "path 不能为空");
+        }
+
+        this.route = Route.create(Set.of(HttpMethod.POST), path)
+                .timeout(parameters.path("timeout").asInt(5000))
+                .handler(rc -> handleRequest(context, rc));
+
+        context.getRouter().register(route);
+        context.setStatus(NodeStatus.builder().color("green").text("监听中").build());
+    }
+
+    /** 路由属于生命周期资源，任何相关参数变化都必须重启 */
+    @Override
+    public boolean isRestartRequired(JsonValue newParameters, JsonValue oldParameters) {
+        return !newParameters.equals(oldParameters);
+    }
+
+    @Override
+    public void onMsg(Context context, Message<?> message) {
+        // Webhook 触发器无输入连接点
+    }
+
+    private void handleRequest(Context context, RoutingContext rc) {
+        try {
+            String body = rc.request().body();
+            String requestId = rc.request().getHeader("X-Request-Id");
+
+            // 触发器 payload 直接放根级业务字段，禁止再包一层 output
+            JsonValue payload = JsonValueFactory.objectNode()
+                    .put("body", parseBody(body))
+                    .put("clientIp", rc.getClientIP());
+
+            // 透传外部追踪 ID；requestId 为 null 时框架自动生成 UUID
+            Message<JsonValue> msg = requestId == null
+                    ? context.createTriggerMessage(payload)
+                    : context.createTriggerMessage(payload, requestId);
+            context.tellNext(msg, Relation.SUCCESS_NAME);
+            context.complete(msg);
+
+            rc.response().statusCode(200)
+                    .contentType("application/json")
+                    .write("{\"code\":200,\"msg\":\"success\"}")
+                    .end();
+        } catch (Exception e) {
+            log.error("[{{NODE_NAME}}] 处理请求失败", e);
+            rc.fail(500, e.getMessage());
+        }
+    }
+
+    /** 幂等释放：未注销的路由持有 handler lambda，会钉住 ClassLoader */
+    @Override
+    public void destroy(Context context) {
+        if (route != null) {
+            context.getRouter().unregister(route);
+            route = null;
+        }
+    }
+
+    private JsonValue parseBody(String body) {
+        if (body == null || body.isBlank()) {
+            return JsonValueFactory.objectNode();
+        }
+        try {
+            return JsonValueFactory.fromJson(body);
+        } catch (Exception e) {
+            return JsonValueFactory.objectNode().put("raw", body);
+        }
+    }
+}

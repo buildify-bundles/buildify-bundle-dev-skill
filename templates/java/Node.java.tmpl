@@ -1,0 +1,140 @@
+package {{PACKAGE}}.nodes;
+
+import cn.buildify.bundle.api.Context;
+import cn.buildify.bundle.api.FlowNode;
+import cn.buildify.bundle.api.FlowNodeDescription;
+import cn.buildify.bundle.api.FlowNodeException;
+import cn.buildify.bundle.api.Relation;
+import cn.buildify.bundle.api.json.JsonValue;
+import cn.buildify.bundle.api.json.JsonValueFactory;
+import cn.buildify.bundle.api.message.Message;
+import cn.buildify.bundle.api.message.support.MessageBuilder;
+import cn.buildify.bundle.api.status.NodeStatus;
+import lombok.extern.slf4j.Slf4j;
+
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+import java.time.Duration;
+import java.util.List;
+import java.util.Objects;
+
+@Slf4j
+@FlowNodeDescription(name = "{{NODE_NAME}}", propertiesFile = "properties/{{NODE_NAME}}.json")
+public class {{NODE_NAME}} implements FlowNode {
+
+    private HttpClient httpClient;
+    private int timeout;
+    private JsonValue dynamicParameters;
+
+    @Override
+    public void initialize(Context context, JsonValue parameters) {
+        if (parameters.path("url").isMissingNode()) {
+            throw new FlowNodeException("MISSING_URL", "url 不能为空");
+        }
+        this.timeout = parameters.path("timeout").asInt(30);
+        if (this.timeout <= 0) {
+            throw new FlowNodeException("INVALID_TIMEOUT", "timeout 必须大于 0");
+        }
+
+        this.httpClient = HttpClient.newBuilder()
+                .connectTimeout(Duration.ofSeconds(timeout))
+                .followRedirects(HttpClient.Redirect.NORMAL)
+                .build();
+
+        applyParameters(parameters);
+        context.setStatus(NodeStatus.builder().color("green").text("就绪").build());
+    }
+
+    /** 只有影响连接资源的参数变化才重启，其余走 onParametersUpdated 热更新 */
+    @Override
+    public boolean isRestartRequired(JsonValue newParameters, JsonValue oldParameters) {
+        return newParameters.path("timeout").asInt(30) != oldParameters.path("timeout").asInt(30);
+    }
+
+    @Override
+    public void onParametersUpdated(Context context, JsonValue newParameters, JsonValue oldParameters) {
+        applyParameters(newParameters);
+    }
+
+    private void applyParameters(JsonValue parameters) {
+        // 含表达式的参数原样存入 dynamicParameters，在 onMsg 中按消息求值
+        this.dynamicParameters = JsonValueFactory.objectNode()
+                .put("url", parameters.path("url"))
+                .put("method", parameters.path("method"));
+    }
+
+    @Override
+    public List<Relation> getRelations() {
+        return List.of(Relation.RELATIONSHIP_SUCCESS, Relation.RELATIONSHIP_FAILURE);
+    }
+
+    @Override
+    public void onMsg(Context context, Message<?> message) {
+        JsonValue payload = getPayload(message, JsonValue.class);
+        JsonValue parameters = context.resolveExpressions(dynamicParameters, payload);
+
+        String url = Objects.requireNonNull(parameters.path("url").asText(null), "url is null");
+        String method = parameters.path("method").asText("GET");
+
+        HttpRequest request;
+        try {
+            request = HttpRequest.newBuilder()
+                    .uri(URI.create(url))
+                    .timeout(Duration.ofSeconds(timeout))
+                    .method(method.toUpperCase(), HttpRequest.BodyPublishers.noBody())
+                    .build();
+        } catch (Exception e) {
+            context.tellFailure(message,
+                    new FlowNodeException("INVALID_URL", "URL 格式错误: " + url, e).with("url", url));
+            context.complete(message); // 同步结束路径同样必须 complete
+            return;
+        }
+
+        httpClient.sendAsync(request, HttpResponse.BodyHandlers.ofString())
+                .whenComplete((response, error) -> {
+                    if (error != null) {
+                        log.error("[{{NODE_NAME}}] 请求失败 url={}", url, error);
+                        context.tellFailure(message, new FlowNodeException(
+                                "HTTP_IO_ERROR", "请求失败: " + error.getMessage(), error).with("url", url));
+                        context.complete(message);
+                        return;
+                    }
+                    try {
+                        JsonValue output = JsonValueFactory.objectNode()
+                                .put("statusCode", response.statusCode())
+                                .put("body", parseBody(response.body()));
+                        JsonValue newPayload = JsonValueFactory.objectNode().put("output", output);
+                        context.tellSuccess(MessageBuilder.withPayload(newPayload)
+                                .copyHeaders(message.getHeaders()).build());
+                    } catch (Throwable e) {
+                        log.error("[{{NODE_NAME}}] 处理响应失败", e);
+                        context.tellFailure(message, new FlowNodeException(
+                                "RESPONSE_ERROR", "处理响应失败", e));
+                    } finally {
+                        context.complete(message);
+                    }
+                });
+    }
+
+    /** 幂等释放 */
+    @Override
+    public void destroy(Context context) {
+        if (httpClient != null) {
+            httpClient.close();
+            httpClient = null;
+        }
+    }
+
+    private JsonValue parseBody(String body) {
+        if (body == null || body.isBlank()) {
+            return JsonValueFactory.objectNode();
+        }
+        try {
+            return JsonValueFactory.fromJson(body);
+        } catch (Exception e) {
+            return JsonValueFactory.objectNode().put("raw", body);
+        }
+    }
+}

@@ -36,9 +36,10 @@ support(message) → onMsg(context, message) × N
 destroy(context)                          ← 资源释放，必须幂等
 ```
 
-联调（Test）环境下 `context.complete(message)` 只表示**本条入站消息**处理完毕，不会销毁节点
-Host。同一 `executionId` 内节点实例保持到 workflow 结束（`shutdown` 时统一 `destroy()`），
-与生产 Actor 常驻语义一致。异步路径仍须每条分支调用 `complete`，以便引擎统计在途消息。
+`context.complete(message)` 只表示**本条入站消息**处理完毕，不会销毁节点。同步路径
+（`onMsg` 返回前已 `tell*`，且未调用 `executeBlocking`）由框架在 `onMsg` 返回时自动收尾。
+异步路径必须在每条结束分支对入站消息调用 `complete`，否则在途消息无法归零。
+联调与生产都是节点实例保持到 workflow 停止后统一 `destroy()`。
 
 ## 参数热更新
 

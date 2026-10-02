@@ -35,6 +35,7 @@ public class {{NODE_NAME}} implements FlowNode {
 
         this.route = Route.create(Set.of(HttpMethod.POST), path)
                 .timeout(parameters.path("timeout").asInt(5000))
+                // 入站认证用 route.authenticator(...)，在读 body 之前执行。HMAC 这类要完整 body 的校验仍放 handler。
                 .handler(rc -> handleRequest(context, rc));
 
         context.getRouter().register(route);
@@ -67,7 +68,6 @@ public class {{NODE_NAME}} implements FlowNode {
                     ? context.createTriggerMessage(payload)
                     : context.createTriggerMessage(payload, requestId);
             context.tellNext(msg, Relation.SUCCESS_NAME);
-            context.complete(msg);
 
             rc.response().statusCode(200)
                     .contentType("application/json")

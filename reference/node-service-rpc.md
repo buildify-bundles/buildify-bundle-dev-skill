@@ -37,8 +37,10 @@ public static class NettyServiceHandler implements NodeServiceHandler {
 }
 ```
 
-`nameParameter` 是强约束：一旦配置，参数缺失、空值或含非法字符都**必须失败**，
-**禁止**回退到 `@NodeService.value()`，否则多实例会退化成同一个服务名。
+`@NodeService.value()` 注释里的「参数为空则用 value」指注解属性 `nameParameter` 本身为空。
+一旦写了 `nameParameter`，节点参数缺失、空白或含非法字符都**必须失败**，
+**禁止**回退到 `value()`，否则多实例会退化成同一个服务名。扫描器
+`AnnotationNodeServiceScanner.resolveExposedServiceName` 就是这个行为。
 
 ## 手动注册（handler 持有连接池 / 客户端 / server 实例）
 

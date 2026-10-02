@@ -89,7 +89,7 @@ schema。后端原样透传，由前端 `ParameterInputList` 遍历 `properties`
 │   ├─ 密码/敏感             → Password
 │   ├─ 含模板变量的字符串     → ExpressionInput（或 Input + "expression": true）
 │   └─ 长文本/代码
-│       ├─ SQL              → SqlEditor（#{变量} 语法）
+│       ├─ SQL              → SqlEditor（#{msg.xxx} / ${msg.xxx}，禁止 {{ }}）
 │       ├─ JS/Python/Java   → CodeEditor（typeOptions.lang）
 │       ├─ JSON 数据        → JsonEditor
 │       ├─ JSON 含表达式    → JsonExpressionInput
@@ -292,13 +292,13 @@ schema。后端原样透传，由前端 `ParameterInputList` 遍历 `properties`
     "label": "分组名称",
     "nodes": [{
       "name": "MyNode", "label": "节点 UI 名称", "summary": "简述（≤10字）",
-      "icon": "my-node.svg", "parameters": { "method": "GET", "timeout": 30 }
+      "parameters": { "method": "GET", "timeout": 30 }
     }]
   }]
 }
 
 // 扁平型：根级 nodes，适用于机器人等扁平列表
-{ "nodes": [{ "icon": "rwork.svg", "name": "SendTextMsgNode",
+{ "nodes": [{ "name": "SendTextMsgNode",
               "label": "文本消息", "summary": "推送文本消息", "parameters": {} }] }
 ```
 
@@ -308,8 +308,11 @@ schema。后端原样透传，由前端 `ParameterInputList` 遍历 `properties`
 | 节点 `name` | 是 | 与 `@FlowNodeDescription(name)` 完全一致 |
 | 节点 `label` | 是 | UI 显示名 |
 | `summary` | 否 | **≤10 字**，超长被截断 |
-| `icon` | 否 | resources 根目录下的文件名 |
 | `parameters` | 否 | 与该节点 `properties` 的 `defaultValue` 对齐；无默认值写 `{}` 或省略 |
+
+**不要写 `icon`，也不要在工程里生成或提交 SVG。** 节点图标由控制台上传并管理
+（`GET/POST/DELETE .../bundles/{bundleId}/icons`），不打进 JAR，也不放在
+`src/main/resources`。脚手架生成的 `bundle.json` 省略该字段。
 
 不需要根级 `credentials` 数组，凭证通过 SPI 自动发现。
 
@@ -331,3 +334,4 @@ schema。后端原样透传，由前端 `ParameterInputList` 遍历 `properties`
 | 12 | 用了 `loadOptions` 却无 `allow-create`/`clearable` | 远程失败时用户完全无法配置 |
 | 13 | `provider=bundle` 省略 `dependsOn` | 必须显式写出，无依赖写 `[]` |
 | 14 | 字段用 `type` 而非 `uiComponent` | 一律 `uiComponent` |
+| 15 | 在工程里生成 SVG，或 `bundle.json` 写 `icon` | 省略 `icon`；图标由平台上传管理 |

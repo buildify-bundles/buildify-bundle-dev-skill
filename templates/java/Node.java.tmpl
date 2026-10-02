@@ -88,8 +88,7 @@ public class {{NODE_NAME}} implements FlowNode {
         } catch (Exception e) {
             context.tellFailure(message,
                     new FlowNodeException("INVALID_URL", "URL 格式错误: " + url, e).with("url", url));
-            context.complete(message); // 同步结束路径同样必须 complete
-            return;
+            return; // 同步路径：onMsg 返回后框架自动 complete
         }
 
         httpClient.sendAsync(request, HttpResponse.BodyHandlers.ofString())

@@ -190,7 +190,6 @@ def main() -> None:
         "groups": [{
             "label": args.group_label,
             "nodes": [{
-                "icon": f"{node_name}.svg",
                 "name": node_name,
                 "label": node_name,
                 "summary": "待补充",
@@ -248,7 +247,8 @@ def main() -> None:
     }), args.force)
 
     print("\n完成。后续步骤：")
-    print("  1. 编辑 src/main/resources/bundle.json 补全 label / summary / icon")
+    print("  1. 编辑 src/main/resources/bundle.json 补全 label / summary")
+    print("     不要生成 SVG，也不要写 icon；节点图标由平台上传管理")
     print("  2. 编辑 src/main/resources/properties/*.json 定义表单字段")
     print("  3. 实现节点 onMsg 业务逻辑")
     print("  4. 补全 README.md 与 CHANGELOG.md 中的 TODO")

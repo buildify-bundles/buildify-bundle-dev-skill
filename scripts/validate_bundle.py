@@ -544,12 +544,8 @@ def check_node_code(jf: JavaFile, is_trigger: bool) -> None:
     has_async = re.search(r"\bexecuteBlocking\(|\bsendAsync\(|\bwhenComplete\(|\bthenAccept\(", code)
 
     if has_async and "complete(" not in code:
-        # 异步路径框架不会自动收尾，必然泄漏在途消息
-        err(loc, "存在异步调用但未调用 context.complete(message)，引擎无法统计在途消息")
-    elif routed and "complete(" not in code:
-        # 纯同步路径框架会在 onMsg 返回后自动完成，但规范要求显式 complete 以保持一致
-        warn(loc, "调用了 tell* 但未 context.complete(message)；纯同步路径框架会自动收尾，"
-                  "规范仍要求显式 complete（幂等）以避免后续改为异步时漏掉")
+        # executeBlocking / sendAsync 等离开 onMsg 后才路由，框架不会自动收尾
+        err(loc, "存在异步调用但未调用 context.complete(入站 message)，引擎无法统计在途消息")
 
     if "getRouter().register(" in code and "unregister(" not in code:
         err(loc, "注册了 HTTP 路由但 destroy() 中没有 unregister，会钉住 ClassLoader")
@@ -614,6 +610,9 @@ def parse_bundle_nodes(data: dict, declared: dict) -> None:
         summary = node.get("summary") or ""
         if len(summary) > 10:
             warn("bundle.json", f"{where}({name}) summary 建议 ≤ 10 字，当前 {len(summary)} 字")
+        if "icon" in node:
+            warn("bundle.json", f"{where}({name}) 不要填写 icon；节点图标由平台上传管理，"
+                                "不要在工程里生成 SVG")
         declared[name] = node
 
     if isinstance(groups, list) and groups:
@@ -749,6 +748,10 @@ def main() -> int:
             if "credentials" in data:
                 warn("bundle.json", "不需要 credentials 数组，凭证通过 SPI 自动发现")
             parse_bundle_nodes(data, declared)
+
+        for svg in sorted(resources.rglob("*.svg")) + sorted(resources.rglob("*.svgz")):
+            rel = svg.relative_to(project)
+            warn(str(rel), "不要把节点图标打进 Bundle；图标由平台上传管理，请删除该 SVG")
 
         for name in sorted(set(declared) - set(nodes)):
             err("bundle.json", f"声明了节点 '{name}' 但没有对应的 "

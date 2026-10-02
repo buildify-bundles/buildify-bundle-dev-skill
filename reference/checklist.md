@@ -8,6 +8,7 @@
 - [ ] 使用 `maven.compiler.release=21` 而非 `source`/`target`
 - [ ] `maven-shade-plugin` 配置了 `ServicesResourceTransformer`
 - [ ] `bundle.json` 位于 `src/main/resources` 根目录
+- [ ] 未生成或提交节点 SVG；`bundle.json` 未写 `icon`（图标由平台上传管理）
 - [ ] 模块根目录存在 `README.md` 与 `CHANGELOG.md`
 
 ## FlowNode
@@ -16,10 +17,11 @@
 - [ ] `@FlowNodeDescription.name` 与 `bundle.json` 节点 `name` **完全一致**
       （分组型 `groups[].nodes[]`，扁平型根级 `nodes[]`）
 - [ ] 参数读取使用 `parameters.path()`，**不使用** `parameters.get()`
-- [ ] `tellSuccess` / `tellFailure` / `tellNext` 之后对入站 `message` 调用了
-      `context.complete(message)`，**同步路径同样需要**
+- [ ] 同步路径在 `onMsg` 返回前完成 `tell*`，**没有**再调用 `context.complete()`
+      （框架在 `onMsg` 返回时自动收尾；本次 `onMsg` 未调用 `executeBlocking`）
 - [ ] 所有异步回调（`sendAsync` / `executeBlocking` / `nodeService().execute()`）在**每条**
-      结束路径上都 complete 了同一条消息；推荐用 `onComplete` 或 `finally` 统一收尾
+      结束路径上都对**入站** `message` 调用了 `complete`；推荐用 `onComplete` 或 `finally` 统一收尾
+- [ ] 触发器只 `tellSuccess(createTriggerMessage(...))`，没有对这条新消息 `complete`
 - [ ] 含表达式的参数在 `initialize()` 存入 `dynamicParameters`，`onMsg()` 用
       `resolveExpressions` 解析
 - [ ] `JsonExpressionInput` 字段直接 `parameters.path(...)` 填入 `dynamicParameters`，

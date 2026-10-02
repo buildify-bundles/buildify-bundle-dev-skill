@@ -30,8 +30,8 @@
 ```
 ````
 
-引用规范：节点参数名、字段名用反引号；表达式写作 `={{ msg.output.xxx }}`；
-消息 payload 的占位名统一用 `msg`，**不要**用 `$json`。
+引用规范：节点参数名、字段名用反引号；表达式按组件写（JSON `={{msg.xxx}}`，
+SQL `#{msg.xxx}` / `${msg.xxx}`，文本 `{{msg.xxx}}`）；占位名统一用 `msg`，**不要**用 `$json`。
 
 ## CHANGELOG.md 与平台 releaseNote
 

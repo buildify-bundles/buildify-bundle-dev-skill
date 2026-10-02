@@ -81,7 +81,8 @@ context.tellSuccess(newMsg);                       // 向 Success 链路
 context.tellNext(message, "BranchName");           // 向指定关系名
 context.tellNext(message, Set.of("A", "B"));       // 广播到多个关系
 context.tellFailure(message, throwable);
-context.complete(message);                         // 同步与异步路径都必须调用
+// 同步：onMsg 返回前 tell* 即可，框架自动 complete
+// 异步：每条结束路径对入站 message 调用 context.complete(message)
 ```
 
 ### 凭证
@@ -472,7 +473,8 @@ rc.fail(500, message);
 .routeAcl(RouteAcl.builder()
     .policy(RouteAcl.Policy.WHITELIST_ONLY)
     .whitelist(Set.of("10.0.0.0/8", "192.168.0.0/16")).build())
-.blockedHandler(e -> log.warn("访问被拒绝: {}", ((AccessBlockedException) e).getClientIP()))
+.failureHandler((ctx, failure) -> log.warn("访问被拒绝: {}", ((AccessBlockedException) failure.cause()).getClientIP()))
+.authenticator(ctx -> AuthResult.passed("apiKey", "principal", null))
 ```
 
 ### 流式文件上传

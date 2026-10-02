@@ -56,9 +56,7 @@ public class {{NODE_NAME}} implements FlowNode {
                     .put("triggeredAt", System.currentTimeMillis());
 
             // 触发器发出的每条消息都必须用 createTriggerMessage 创建
-            Message<JsonValue> msg = context.createTriggerMessage(payload);
-            context.tellNext(msg, Relation.SUCCESS_NAME);
-            context.complete(msg);
+            context.tellNext(context.createTriggerMessage(payload), Relation.SUCCESS_NAME);
         } catch (Exception e) {
             log.error("[{{NODE_NAME}}] 触发失败", e);
             context.setStatus(NodeStatus.builder().color("red").text("触发失败").build());

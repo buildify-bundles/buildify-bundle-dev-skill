@@ -61,7 +61,7 @@ Monaco 多语言编辑器，值为 `String`。
 "typeOptions": { "height": "200px", "title": "SQL 查询语句" }
 ```
 
-用 `#{variable}` 语法引用变量，与其他编辑器的 `{{ }}` **不同**。`enableExpression` 不适用。
+用 `#{msg.xxx}`（预编译参数，防注入）和 `${msg.xxx}`（表名/列名直接替换）。**禁止** `{{ }}` / `={{ }}`。`enableExpression` 不适用。
 
 ### JsonEditor / JsonExpressionInput
 
@@ -69,8 +69,9 @@ Monaco 多语言编辑器，值为 `String`。
 "typeOptions": { "height": "300px", "title": "请求体" }
 ```
 
-`JsonEditor` 存原始 JSON 字符串；`JsonExpressionInput` 支持在 JSON 值中嵌 `{{ }}` 表达式，
-且编排器会把值规整为 `JsonValue` 树下发——服务端直接 `parameters.path("字段")` 放进
+`JsonEditor` 存原始 JSON 字符串，不要往里塞表达式。
+`JsonExpressionInput` 在 JSON **字符串值**里用 `={{msg.xxx}}` 做整字段替换（保留类型）；混排写成 `"=[{{msg.a}}] {{msg.b}}"`。
+编排器会把值规整为 `JsonValue` 树下发——服务端直接 `parameters.path("字段")` 放进
 `dynamicParameters` 即可，**不要**再 `JsonValueFactory.fromJson(...asText())`。
 
 ### ExpressionInput（TemplateExpressionInput）

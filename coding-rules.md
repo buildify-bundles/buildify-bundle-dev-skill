@@ -5,7 +5,7 @@
 ## 目录
 
 - [规范 1：读参数用 path()](#规范-1读参数用-path绝不用-get)
-- [规范 2：路由后必须 complete](#规范-2路由后必须-contextcomplete入站-message)
+- [规范 2：异步路径必须 complete](#规范-2异步路径必须-contextcomplete同步路径框架自动收尾)
 - [规范 3：dynamicParameters + resolveExpressions](#规范-3dynamicparameters--resolveexpressions)
 - [规范 4：普通节点输出放 output](#规范-4普通节点输出放-output触发器放根级)
 - [规范 5：凭证标识 PascalCase](#规范-5凭证标识-pascalcase三处逐字一致)
@@ -23,23 +23,28 @@ int timeout  = parameters.path("timeout").asInt(30);
 boolean flag = parameters.path("enabled").asBoolean(false);
 ```
 
-## 规范 2：路由后必须 `context.complete(入站 message)`
+## 规范 2：异步路径必须 `context.complete`，同步路径框架自动收尾
 
-在 `tellSuccess` / `tellFailure` / `tellNext` 完成路由决策后，**同步和异步路径都必须**对
-`onMsg` 的入参 `message` 调用 `complete`，否则框架无法释放消息与异步句柄。
+与 `FlowNode` / `Context.complete` 的契约一致（`DefaultContext.endMessageProcessing`）：
+
+- **同步**：在 `onMsg` 返回前已经 `tellSuccess` / `tellNext` / `tellFailure`，且这次
+  `onMsg` **没有**调用 `executeBlocking`。框架在 `onMsg` 返回时自动 `complete`，
+  **不要**再调。
+- **异步**：路由发生在 `onMsg` 返回之后，必须在**每条**结束路径对入站 `message` 调用
+  `complete`。`executeBlocking` 会标记异步，框架不再自动收尾；`sendAsync` /
+  `whenComplete` / `nodeService().execute()` 的 `tell*` 不在 `onMsg` 线程内，同样不会自动收尾。
 
 ```java
-// 同步路径
+// 同步：tell 后直接返回，不要 complete
 context.tellSuccess(outMsg);
-context.complete(message);
 
-// 异步路径：用 onComplete 统一收尾
+// executeBlocking：onComplete 统一收尾
 context.<String>executeBlocking(() -> doWork())
     .onSuccess(result -> context.tellSuccess(buildMsg(result, message)))
     .onFailure(e -> context.tellFailure(message, e))
     .onComplete(() -> context.complete(message));
 
-// 原生异步：finally 保证必然 complete
+// 原生异步：finally 保证必然 complete 入站 message
 httpClient.sendAsync(request, BodyHandlers.ofString()).whenComplete((resp, err) -> {
     try {
         if (err != null) context.tellFailure(message, err);
@@ -50,10 +55,14 @@ httpClient.sendAsync(request, BodyHandlers.ofString()).whenComplete((resp, err) 
 });
 ```
 
+触发器发出的是 `createTriggerMessage` 的新消息，不是 `onMsg` 的入站消息，
+`tellSuccess` / `tellNext` 之后不要对它 `complete`。
+
 ## 规范 3：`dynamicParameters` + `resolveExpressions`
 
-支持表达式（`={{ msg.url }}`）的参数在 `initialize()` 存入 `dynamicParameters`，
-在 `onMsg()` 中按当前消息求值：
+支持表达式的参数在 `initialize()` 存入 `dynamicParameters`，在 `onMsg()` 中按当前消息求值。
+文本用 `{{ msg.xxx }}`，JSON（`JsonExpressionInput`）用 `={{ msg.xxx }}`；
+SQL（`SqlEditor`）用 `#{msg.xxx}` / `${msg.xxx}`，不要走 `{{ }}`：
 
 ```java
 public void initialize(Context context, JsonValue parameters) {
@@ -109,7 +118,8 @@ JsonValue bad = JsonValueFactory.objectNode().put("output", payload);
 ```
 
 表单引用凭证类型用 `typeOptions.credentialsType`（**不是**已废弃的 `credentialsName`）。
-`context.getCredentials(...)` 的入参是**表单字段 `name`**，不是凭证类型标识：
+`context.getCredentials(...)` 的入参是**表单字段 `name`**，不是凭证类型标识。
+`@CredentialsDescription` 类注释里的 `getCredentials(type)` 示例已过时，以 `Context.getCredentials` 为准：
 
 ```json
 { "name": "credentialsId", "uiComponent": "CredentialSelect",

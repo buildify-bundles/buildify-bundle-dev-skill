@@ -67,7 +67,8 @@ SQL `#{msg.xxx}` / `${msg.xxx}`，文本 `{{msg.xxx}}`）；占位名统一用 `
 ## buildify-publish CLI
 
 仓库内维护的官方 CLI，目录 `tools/buildify-publish-cli`，PyPI 包名 `buildify-publish-cli`，
-需要 Python 3.10+，入口命令 `buildify-publish`。
+需要 Python 3.10+，入口命令 `buildify-publish`。**1.1.0** 起一把密钥对应一个工作空间，
+本地用命名 profile 保存多把密钥。
 
 权威参考是包内 `usage.md`（等同 `buildify-publish help` 的输出）。
 
@@ -77,29 +78,77 @@ pip install buildify-publish-cli      # 或 pipx / uv tool install
 
 ### 子命令
 
-| 子命令 | HTTP |
+| 子命令 | HTTP / 作用 |
 |---|---|
 | `health` | `GET /v1/health`（无需 API Key） |
-| `key test` | `GET /v1/publish-key/test` |
+| `key test` | `GET /v1/publish-key/test`；成功后缓存该 profile 的 `tenantId` |
 | `bundle info` | `GET /v1/bundles/info?bundleName=...` |
 | `bundle upload` | `POST /v1/bundles/versions`（multipart） |
-| `config` | 读写 `~/.buildifyrc`：`init` / `set-base-url` / `set-api-key` / `set-key` / `show` |
+| `config` | 读写 `~/.buildifyrc`，见下表 |
+
+`config` 子命令：
+
+| 子命令 | 作用 |
+|---|---|
+| `add-profile <name>` | 经 stdin 保存一把工作空间密钥；**不**改默认 profile |
+| `profiles` | 列出已保存 profile（无密钥明文）；`--json` 含 `tenantId` |
+| `use <name>` | 把该 profile 写成 `[publish].current`（机器默认） |
+| `remove-profile <name>` | 删除一把密钥；若它是 current，则清空默认 |
+| `set-base-url` / `set-key base_url` | 写顶层 `base_url` |
+| `set-api-key` / `set-key api_key` | 更新 **当前** profile；没有 current 时写顶层遗留 `api_key`（列出时名为 `default`） |
+| `init` / `show` | 初始化 / 查看（`show` 只显示文件内容与掩码，不含环境变量合并结果） |
 
 ### 配置与认证
 
-全局选项 `--base-url`、`--api-key`、`--json`（单行 JSON 信封）、`--quiet`。
+全局选项 `--base-url`、`--api-key`、`--profile`、`--json`（单行 JSON 信封）、`--quiet`。
 
-环境变量 `BUILDIFY_PUBLISH_BASE_URL`、`BUILDIFY_PUBLISH_API_KEY`、`BUILDIFY_PUBLISH_JSON`、`NO_COLOR`。
+环境变量 `BUILDIFY_PUBLISH_BASE_URL`、`BUILDIFY_PUBLISH_API_KEY`、`BUILDIFY_PUBLISH_PROFILE`、
+`BUILDIFY_PUBLISH_JSON`、`BUILDIFY_PUBLISH_NO_PROMPT`、`NO_COLOR`。
 
-解析优先级：命令行参数 → 环境变量 → `~/.buildifyrc`（TOML，仅允许 `base_url` / `api_key`）
-→ 默认 `https://publish.buildify.cn`。
+认证头 `Authorization: Bearer <keyId>.<secret>`。密钥在控制台当前工作空间的
+「工作空间设置 → 发布密钥」创建/轮换，CLI 不签发密钥。
 
-认证头 `Authorization: Bearer <keyId>.<secret>`，密钥在控制台创建/轮换。
+配置文件 `~/.buildifyrc`（Windows 为 `%USERPROFILE%\.buildifyrc`），模式 `600`，
+与编排 CLI `buildify` 共用。发布密钥只写顶层遗留字段或 `[publish]`，**不**写入 `[openapi]`。
+
+| 位置 | 内容 |
+|---|---|
+| 顶层 `base_url` | 发布 API 主机 |
+| 顶层 `api_key` | 遗留单密钥，profile 名固定为 `default` |
+| `[publish].current` | `config use` 写入的默认 profile 名 |
+| `[publish].profiles.<name>` | `api_key`，以及 `key test` 缓存的 `tenant_id` / `key_name` / `key_prefix` |
+
+**Base URL：** `--base-url` → `BUILDIFY_PUBLISH_BASE_URL` → 文件 → 默认 `https://publish.buildify.cn`。
+
+**选钥：**
+
+1. `--api-key` 或 `BUILDIFY_PUBLISH_API_KEY`（忽略已保存的 profile）
+2. `--profile` 或 `BUILDIFY_PUBLISH_PROFILE`
+3. 从当前目录向上找到的 `.buildify-workspace`（文件只含一行公开 `tenantId`，来自 `key test`）
+4. `[publish].current`
+5. 仅保存了一把密钥时用这一把
+
+没有密钥时：交互终端会提示创建并写入 `~/.buildifyrc`；`--json`、CI、管道或
+`BUILDIFY_PUBLISH_NO_PROMPT=1` 则退出码 2，`data.reason=missing_api_key`。
+
+多把密钥且上面 1–4 都没选定时，退出码 2，`data.reason=profile_required`，
+`data.profiles` 不含密钥。`--profile` 名称不存在时 `data.reason=profile_not_found`。
+仓库钉了工作空间、本地没有 `tenant_id` 匹配的密钥时，`data.reason=workspace_key_missing`。
+
+密钥经 stdin 写入，避免出现在进程列表和 shell 历史里：
 
 ```bash
-printf '%s' 'keyId.secret' | buildify-publish config set-api-key   # 推荐走 stdin
-buildify-publish key test
+printf '%s' 'keyId.secret' | buildify-publish config add-profile acme
+buildify-publish --profile acme --json key test
+buildify-publish --json config profiles
 ```
+
+代用户发布时：
+
+- `missing_api_key`：向用户要该工作空间的 `keyId.secret`，再用上面的 stdin 命令 `add-profile`
+- `profile_required`：展示列表（无密钥），问一次，之后的命令都带 `--profile <name>`
+- 用户没有要求改这台机器的默认工作空间时，保持 `[publish].current` 不变
+- `workspace_key_missing`：向用户要 `.buildify-workspace` 里那个工作空间的密钥再 `add-profile`；上传使用与该 id 匹配的密钥
 
 ### 退出码
 
@@ -107,8 +156,8 @@ buildify-publish key test
 |---|---|
 | 0 | 成功 |
 | 1 | 通用失败 |
-| 2 | 缺配置 / 鉴权失败 / HTTP 401、403 |
-| 3 | 本地校验失败（文件不存在、api_key 为空） |
+| 2 | 缺密钥、profile 未选定或名称不存在、工作空间无本地密钥、HTTP 401 / 403 |
+| 3 | 本地校验失败（JAR 或 release notes 不是文件、说明超长、profile 名非法等） |
 | 4 | HTTP 4xx |
 | 5 | 网络超时、连接错误 |
 
@@ -158,5 +207,7 @@ buildify-publish bundle upload \
   --release-notes-file ./bundle-wecom-bot/CHANGELOG.md
 ```
 
-CI 中设置 `BUILDIFY_PUBLISH_API_KEY`；需要机器解析输出时加 `BUILDIFY_PUBLISH_JSON=1`
-或 `--json`，按退出码分支。
+CI 用 `BUILDIFY_PUBLISH_API_KEY`（忽略本机 profile）或 `BUILDIFY_PUBLISH_PROFILE`；
+设 `BUILDIFY_PUBLISH_NO_PROMPT=1`，避免缺密钥时进入交互提示。需要机器解析输出时加
+`BUILDIFY_PUBLISH_JSON=1` 或 `--json`，按退出码和 `data.reason` 分支。多把密钥时上传命令带
+`--profile <name>`。

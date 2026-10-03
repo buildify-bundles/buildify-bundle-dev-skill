@@ -141,3 +141,5 @@
 - [ ] 上传时 `bundleName` / `-v` / JAR 文件名三者版本一致
 - [ ] `bundle upload` 带了 `--release-notes-file`
 - [ ] `--overwrite` 仅用于 `-SNAPSHOT` 版本
+- [ ] 多把发布密钥时命令带 `--profile`；用户未要求时不改 `[publish].current`
+- [ ] 仓库有 `.buildify-workspace` 时，所用密钥的 `tenantId` 与该文件一致

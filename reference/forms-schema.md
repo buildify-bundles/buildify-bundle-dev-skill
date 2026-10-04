@@ -91,8 +91,8 @@ schema。后端原样透传，由前端 `ParameterInputList` 遍历 `properties`
 │   └─ 长文本/代码
 │       ├─ SQL              → SqlEditor（#{msg.xxx} / ${msg.xxx}，禁止 {{ }}）
 │       ├─ JS/Python/Java   → CodeEditor（typeOptions.lang）
-│       ├─ JSON 数据        → JsonEditor
-│       ├─ JSON 含表达式    → JsonExpressionInput
+│       ├─ JSON 文档（自由结构） → JsonEditor
+│       ├─ JSON 文档含表达式   → JsonExpressionInput
 │       └─ 证书/纯文本       → CodeEditor（lang:"text" + enableExpression:false）
 ├─ 数字                      → InputNumber ／ 有界调节 → Slider
 ├─ 布尔                      → Switch
@@ -109,14 +109,19 @@ schema。后端原样透传，由前端 `ParameterInputList` 遍历 `properties`
 ├─ 日期时间                  → DatePicker / DateTimePicker / TimePicker
 ├─ 结构化数据
 │   ├─ 固定字段对象           → Fixed
-│   ├─ 用户按需添加的对象      → Collection
-│   ├─ 固定结构数组           → FixedCollection
+│   ├─ 用户按需勾选的可选字段   → Collection（值为对象，不是数组）
+│   ├─ 需要人逐项添加的数组    → FixedCollection（可增删行）
 │   ├─ 工作流路由关系数组      → RelationCollection
 │   └─ schema/远程驱动的对象   → DynamicSchemaForm
 ├─ 只读文字                  → Tag
 ├─ 视觉间距                  → Space
 └─ 调用后端方法的按钮         → TestButton
 ```
+
+需要人在界面上逐项维护的数组（请求头、查询参数、标签、收件人等）用 `FixedCollection`：
+有添加按钮，可增删、可拖拽排序。不要用 `JsonEditor`、`JsonExpressionInput` 或 `CodeEditor`
+让用户手写 JSON 数组。字符串列表同样用 `FixedCollection`，子字段只放一个 `Input`。
+`Collection` 是可选字段对象，不能拿来做数组。画布分支连线才用 `RelationCollection`。
 
 ## 4. 必填与校验
 
@@ -349,3 +354,4 @@ schema。后端原样透传，由前端 `ParameterInputList` 遍历 `properties`
 | 15 | 省略 `icon`，或在工程里生成 SVG | 默认写 `"icon": "default.svg"`；要自定义再改文件名。SVG 由平台上传，不打进 JAR |
 | 16 | 可传值字段省略 `expression` | 默认 `"expression": true` 与 `"droppable": true`，否则无法写入 `={{ msg.xxx }}` |
 | 17 | `CredentialSelect` 设了 `expression: true` | 访问凭证不要开表达式 |
+| 18 | 数组让用户手写 JSON | 用 `FixedCollection`，界面可动态添加项 |

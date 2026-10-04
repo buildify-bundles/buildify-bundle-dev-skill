@@ -114,6 +114,7 @@ Maven 依赖：`cn.buildify:buildify-bundle-api`（版本见 `templates/project/
    `isTest()` / `createTriggerMessage` / `destroy()`
 7. 节点 `icon` 默认写 `"default.svg"`，需要自定义图标时再改文件名。不要在工程里生成 SVG，
    图标文件由平台上传管理，不打进 JAR、不放在 `src/main/resources`
+8. 需要人逐项填写的数组用 `FixedCollection`（可增删），不要用 `JsonEditor` 手写 JSON 数组
 
 ## 代码模板
 

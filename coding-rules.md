@@ -64,6 +64,9 @@ httpClient.sendAsync(request, BodyHandlers.ofString()).whenComplete((resp, err) 
 `"expression": true` 与 `"droppable": true`，这样可以直接传 `={{ msg.xxx }}`。
 访问凭证和 `credentials/*.json` 不要开表达式。
 
+需要人逐项填写的数组（请求头、标签、收件人等）用 `FixedCollection`，值是 JSON 数组，
+用 `parameters.path("headers")` 遍历元素。不要用 `JsonEditor` 让用户手写 JSON 数组。
+
 支持表达式的参数在 `initialize()` 存入 `dynamicParameters`，在 `onMsg()` 中按当前消息求值。
 文本用 `{{ msg.xxx }}`，JSON（`JsonExpressionInput`）用 `={{ msg.xxx }}`；
 SQL（`SqlEditor`）用 `#{msg.xxx}` / `${msg.xxx}`，不要走 `{{ }}`：

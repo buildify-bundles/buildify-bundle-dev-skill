@@ -71,6 +71,7 @@ Monaco 多语言编辑器，值为 `String`。
 
 `JsonEditor` 存原始 JSON 字符串，不要往里塞表达式。
 `JsonExpressionInput` 在 JSON **字符串值**里用 `={{msg.xxx}}` 做整字段替换（保留类型）；混排写成 `"=[{{msg.a}}] {{msg.b}}"`。
+两者只用于自由结构的整份 JSON 文档。需要人逐项添加的数组改用 `FixedCollection`。
 编排器会把值规整为 `JsonValue` 树下发——服务端直接 `parameters.path("字段")` 放进
 `dynamicParameters` 即可，**不要**再 `JsonValueFactory.fromJson(...asText())`。
 
@@ -249,9 +250,11 @@ Monaco 多语言编辑器，值为 `String`。
 下拉展示名优先取 `displayName` → `label` → `name`；**新配置统一用 `label`**，
 `displayName` 仅为历史兼容。可嵌套 `Fixed` 等组成多层结构。
 
-### FixedCollection — 固定结构列表
+### FixedCollection — 可动态添加的数组
 
-值为**数组**，每条记录结构相同，可增删拖拽排序。
+人工逐项填写的数组用本组件：每条结构相同，界面提供添加、删除和拖拽排序。
+请求头、查询参数、标签、收件人等都走这里，不要改成 `JsonEditor` 让用户手写 JSON 数组。
+字符串列表只放一个 `Input` 子字段。
 
 ```json
 { "name": "headers", "label": "请求头", "uiComponent": "FixedCollection",
@@ -259,7 +262,8 @@ Monaco 多语言编辑器，值为 `String`。
   "typeOptions": { "addText": "添加请求头", "emptyText": "暂未添加",
                    "sortable": true, "border": true },
   "options": [
-    { "name": "key", "label": "名称", "uiComponent": "Input", "required": true },
+    { "name": "key", "label": "名称", "uiComponent": "Input", "required": true,
+      "expression": true, "droppable": true },
     { "name": "value", "label": "值", "uiComponent": "ExpressionInput" }
   ] }
 ```

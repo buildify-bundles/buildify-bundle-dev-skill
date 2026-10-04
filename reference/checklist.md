@@ -83,6 +83,7 @@
 - [ ] 节点 / 触发器 / Webhook 表单中，可传值字段设了 `expression: true` 与 `droppable: true`
 - [ ] `CredentialSelect`（访问凭证）未设 `expression`；`credentials/*.json` 也未开表达式
 - [ ] 未给编辑器类组件（`CodeEditor` / `SqlEditor` / `JsonEditor`）设顶层 `expression: true`
+- [ ] 需要人工逐项填写的数组使用 `FixedCollection`（可增删），未用 `JsonEditor` 手写 JSON 数组
 - [ ] `FixedCollection` 的 `defaultValue` 包含 `options` 中所有子字段
 - [ ] 集合类子字段 `name` 不含父级路径前缀
 - [ ] 🔍 `summary` ≤ 10 字

@@ -76,7 +76,8 @@ python3 <skill-root>/scripts/scaffold_bundle.py \
 `--method ClassName:methodName`。至少提供一个节点类选项。
 
 **validate_bundle.py** — 校验命名、SPI、pom、表单、凭证、complete、RPC、资源泄漏；
-`bundle.json` 中的 `icon` 与 resources 下的 SVG 记 WARNING（图标由平台上传管理）：
+`bundle.json` 节点缺 `icon`（默认应为 `"default.svg"`）以及 resources 下的 SVG 记 WARNING
+（图标文件由平台上传管理，不要打进 JAR）：
 
 ```bash
 python3 <skill-root>/scripts/validate_bundle.py ./my-bundle           # ERROR 时 exit 1
@@ -106,13 +107,13 @@ Maven 依赖：`cn.buildify:buildify-bundle-api`（版本见 `templates/project/
 
 1. 参数读 `path()`，不用 `get()`
 2. 同步路径在 `onMsg` 返回前 `tell*` 即可，框架自动 `complete`；异步路径必须对入站 `message` 调用 `context.complete()`
-3. 表达式参数：`dynamicParameters` + `resolveExpressions`
+3. 可传值字段默认 `expression: true`（访问凭证除外）；代码侧 `dynamicParameters` + `resolveExpressions`
 4. 普通节点输出放 `output`；触发器 payload 放根级
 5. 凭证类型 PascalCase；`credentialsType` 三处一致；`getCredentials` 用表单字段 `name`
 6. 已知错误用 `FlowNodeException`（含 `initialize` 参数校验）；触发器遵守
    `isTest()` / `createTriggerMessage` / `destroy()`
-7. **不要生成 SVG 图标**，也不要在 `bundle.json` 写 `icon`。节点图标由平台上传管理，
-   不打进 JAR、不放在 `src/main/resources`
+7. 节点 `icon` 默认写 `"default.svg"`，需要自定义图标时再改文件名。不要在工程里生成 SVG，
+   图标文件由平台上传管理，不打进 JAR、不放在 `src/main/resources`
 
 ## 代码模板
 

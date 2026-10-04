@@ -60,6 +60,10 @@ httpClient.sendAsync(request, BodyHandlers.ofString()).whenComplete((resp, err) 
 
 ## 规范 3：`dynamicParameters` + `resolveExpressions`
 
+节点表单里，除访问凭证（`CredentialSelect`）外，可传值字段默认
+`"expression": true` 与 `"droppable": true`，这样可以直接传 `={{ msg.xxx }}`。
+访问凭证和 `credentials/*.json` 不要开表达式。
+
 支持表达式的参数在 `initialize()` 存入 `dynamicParameters`，在 `onMsg()` 中按当前消息求值。
 文本用 `{{ msg.xxx }}`，JSON（`JsonExpressionInput`）用 `={{ msg.xxx }}`；
 SQL（`SqlEditor`）用 `#{msg.xxx}` / `${msg.xxx}`，不要走 `{{ }}`：

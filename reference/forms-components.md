@@ -193,6 +193,8 @@ Monaco 多语言编辑器，值为 `String`。
 值不写入 `parameters`，而写入 `data.credentials[<字段 name>]`，结构为
 `{ credentialsId, name, type }`。代码侧用 `context.getCredentials("<字段 name>")` 读取。
 
+不要设顶层 `expression` / `droppable`。其余可传值字段默认开启表达式，访问凭证保持关闭。
+
 ### NodeSelect / ModelSelect
 
 分别用于从当前画布选节点、选 AI 模型（provider/model），无需额外 `typeOptions`。

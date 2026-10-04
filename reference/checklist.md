@@ -8,7 +8,8 @@
 - [ ] 使用 `maven.compiler.release=21` 而非 `source`/`target`
 - [ ] `maven-shade-plugin` 配置了 `ServicesResourceTransformer`
 - [ ] `bundle.json` 位于 `src/main/resources` 根目录
-- [ ] 未生成或提交节点 SVG；`bundle.json` 未写 `icon`（图标由平台上传管理）
+- [ ] 每个节点 `icon` 为 `"default.svg"`，仅在需要自定义图标时修改文件名
+- [ ] 未把 SVG 打进 `src/main/resources`（图标文件由平台上传管理）
 - [ ] 模块根目录存在 `README.md` 与 `CHANGELOG.md`
 
 ## FlowNode
@@ -79,6 +80,8 @@
       （按需 `filterable`），避免远程不可达时无法配置
 - [ ] `displayOptions` 只引用同级兄弟字段，条件值为数组
 - [ ] `CodeEditor` 存证书 / 纯文本时设了 `"enableExpression": false`
+- [ ] 节点 / 触发器 / Webhook 表单中，可传值字段设了 `expression: true` 与 `droppable: true`
+- [ ] `CredentialSelect`（访问凭证）未设 `expression`；`credentials/*.json` 也未开表达式
 - [ ] 未给编辑器类组件（`CodeEditor` / `SqlEditor` / `JsonEditor`）设顶层 `expression: true`
 - [ ] `FixedCollection` 的 `defaultValue` 包含 `options` 中所有子字段
 - [ ] 集合类子字段 `name` 不含父级路径前缀

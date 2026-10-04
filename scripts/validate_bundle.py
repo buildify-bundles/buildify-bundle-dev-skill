@@ -42,6 +42,16 @@ BUILTIN_METHODS = {"test"}
 # 编辑器类组件：内置变量语法，不接受顶层 expression
 EDITOR_COMPONENTS = {"CodeEditor", "SqlEditor", "JsonEditor", "JsonExpressionInput"}
 
+# 节点表单里默认可切到表达式、供 Agent 传值的控件。
+# 访问凭证、编辑器、纯展示/操作，以及本身就是表达式控件的不在此列。
+EXPRESSION_DEFAULT_COMPONENTS = {
+    "Input", "Password", "InputNumber", "Select",
+    "RadioGroup", "RadioButtonGroup", "CheckboxGroup",
+    "Switch", "Slider",
+    "DatePicker", "DateTimePicker", "TimePicker",
+    "Cascader", "ColorPicker",
+}
+
 # 不产生业务数据的纯 UI 组件，不应出现在 defaultValue 中
 NON_DATA_COMPONENTS = {"TestButton", "Space", "Tag", "FeishuRegisterApp"}
 
@@ -244,6 +254,14 @@ def walk_fields(fields, loc: str, path_prefix: str, ctx: dict) -> None:
         if component in EDITOR_COMPONENTS and field.get("expression"):
             err(loc, f"{where} {component} 内置变量语法，顶层 expression 无效，"
                      "请改用 typeOptions.enableExpression")
+        if component == "CredentialSelect" and field.get("expression"):
+            err(loc, f"{where} 访问凭证不要开启 expression：选的是已保存的凭证实例，"
+                     "不按消息求值")
+        elif (ctx.get("expression_default")
+              and component in EXPRESSION_DEFAULT_COMPONENTS
+              and not (field.get("expression") and field.get("droppable"))):
+            warn(loc, f"{where} 可传值字段应设 expression: true 与 droppable: true，"
+                      "否则无法写入 ={{ msg.xxx }}；仅访问凭证保持关闭")
         if component == "CodeEditor":
             lang = type_options.get("lang", "text")
             if lang == "text" and "enableExpression" not in type_options:
@@ -420,7 +438,8 @@ def check_properties_file(path: Path, project: Path, ctx: dict):
 
     cred_fields: dict = {}
     collect_credential_fields(data["properties"], cred_fields)
-    ctx = dict(ctx, form_credential_fields=cred_fields)
+    is_node_form = path.relative_to(project / "src/main/resources").parts[0] == "properties"
+    ctx = dict(ctx, form_credential_fields=cred_fields, expression_default=is_node_form)
 
     walk_fields(data["properties"], loc, "properties", ctx)
 
@@ -610,9 +629,12 @@ def parse_bundle_nodes(data: dict, declared: dict) -> None:
         summary = node.get("summary") or ""
         if len(summary) > 10:
             warn("bundle.json", f"{where}({name}) summary 建议 ≤ 10 字，当前 {len(summary)} 字")
-        if "icon" in node:
-            warn("bundle.json", f"{where}({name}) 不要填写 icon；节点图标由平台上传管理，"
-                                "不要在工程里生成 SVG")
+        icon = node.get("icon")
+        if icon is None or (isinstance(icon, str) and not icon.strip()):
+            warn("bundle.json", f"{where}({name}) 缺少 icon，默认应写 \"default.svg\"；"
+                                "需要自定义图标时再改文件名")
+        elif not isinstance(icon, str):
+            err("bundle.json", f"{where}({name}) icon 必须是字符串，默认 \"default.svg\"")
         declared[name] = node
 
     if isinstance(groups, list) and groups:

@@ -24,6 +24,8 @@
       "label": "请求方法",
       "uiComponent": "RadioButtonGroup",
       "required": true,
+      "expression": true,
+      "droppable": true,
       "options": [
         { "label": "GET", "value": "GET" },
         { "label": "POST", "value": "POST" },
@@ -43,6 +45,8 @@
       "name": "timeout",
       "label": "超时（秒）",
       "uiComponent": "InputNumber",
+      "expression": true,
+      "droppable": true,
       "hint": "更改超时后节点将自动重启",
       "typeOptions": {
         "min": 1,

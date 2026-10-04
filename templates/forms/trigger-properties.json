@@ -9,6 +9,8 @@
       "label": "Cron 表达式",
       "uiComponent": "Input",
       "required": true,
+      "expression": true,
+      "droppable": true,
       "hint": "Quartz 格式：秒 分 时 日 月 周，修改后节点将自动重启",
       "placeholder": "0 */5 * * * ?"
     },
@@ -16,6 +18,8 @@
       "name": "timezone",
       "label": "时区",
       "uiComponent": "Select",
+      "expression": true,
+      "droppable": true,
       "options": [
         { "label": "Asia/Shanghai", "value": "Asia/Shanghai" },
         { "label": "UTC", "value": "UTC" }

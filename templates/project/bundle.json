@@ -8,6 +8,7 @@
           "name": "{{NODE_NAME}}",
           "label": "{{NODE_LABEL}}",
           "summary": "发起 HTTP 请求",
+          "icon": "default.svg",
           "parameters": {
             "method": "GET",
             "timeout": 30

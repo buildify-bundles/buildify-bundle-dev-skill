@@ -64,8 +64,8 @@ schema。后端原样透传，由前端 `ParameterInputList` 遍历 `properties`
   "options": [],               // 静态选项，或集合类的子字段定义
 
   // ── 表达式 ──
-  "expression": false,         // 支持切换 ={{ }} 模板表达式
-  "droppable": false,          // 支持从变量面板拖入，通常与 expression 同用
+  "expression": true,          // 可传值字段默认 true；访问凭证 CredentialSelect 不要设
+  "droppable": true,           // 与 expression 同开，便于从变量面板拖入
 
   // ── 条件显示 ──
   "displayOptions": { "show": { "otherField": ["value1"] } },
@@ -140,6 +140,9 @@ schema。后端原样透传，由前端 `ParameterInputList` 遍历 `properties`
 
 ## 5. 表达式模式
 
+节点、触发器、Webhook 表单里，**除访问凭证外，可传值字段默认开启表达式**，方便直接写入
+`={{ msg.xxx }}` 或从变量面板拖入。省略 `expression` 时界面把它当 `false`，Agent 就无法传值。
+
 ```json
 { "name": "url", "uiComponent": "Input", "expression": true, "droppable": true,
   "placeholder": "https://api.example.com/{{ msg.path }}" }
@@ -150,13 +153,17 @@ schema。后端原样透传，由前端 `ParameterInputList` 遍历 `properties`
 | 普通文本 | `"https://api.example.com/users"` |
 | 表达式 | `"=https://api.example.com/{{ msg.userId }}"` |
 
-| 控件 | 表达式支持方式 |
+| 控件 | 表达式 |
 |---|---|
-| `Input` / `Password` / `InputNumber` / `Select` | 设 `"expression": true` 开启切换 |
-| `ExpressionInput` | 强制表达式模式，值始终带 `=` 前缀 |
-| `CodeEditor` / `SqlEditor` / `JsonEditor` | 内置变量语法，**不要**设顶层 `expression`，
-  用 `typeOptions.enableExpression` 控制 |
+| `Input` / `Password` / `InputNumber` / `Select` / `RadioGroup` / `RadioButtonGroup` / `CheckboxGroup` / `Switch` / `Slider` / `DatePicker` / `DateTimePicker` / `TimePicker` / `Cascader` / `ColorPicker` | **默认** `"expression": true` 且 `"droppable": true` |
+| `CredentialSelect`（访问凭证） | **不要**设 `expression`。选的是已保存的凭证实例，不按消息求值 |
+| `ExpressionInput` | 强制表达式模式，值始终带 `=` 前缀，不必再写 `expression` |
+| `JsonExpressionInput` | 内置 `={{ }}`，不必再写顶层 `expression` |
+| `CodeEditor` / `SqlEditor` / `JsonEditor` | 内置变量语法，**不要**设顶层 `expression`，用 `typeOptions.enableExpression` 控制 |
 | `BooleanExpressionInput` | 值**不带** `=` 前缀，直接是表达式字符串 |
+| `TestButton` / `Space` / `Tag` | 不产生参数，不要设 `expression` |
+
+凭证表单 `credentials/*.json`（主机、密钥等）在保存时入库，不按消息求值，**不要**开 `expression`。
 
 ## 6. 访问凭证字段
 
@@ -178,6 +185,7 @@ schema。后端原样透传，由前端 `ParameterInputList` 遍历 `properties`
 - 代码中 `context.getCredentials("credentialsId")` 传的是**本字段的 `name`**，不是 `credentialsType`
 - 同一节点有多个凭证框时，各自有独立 `name`，分别 `getCredentials`
 - 凭证值不写入 `parameters`，而是写入节点 `data.credentials[<字段 name>]`
+- **不要**设 `"expression": true` 或 `"droppable": true`。访问凭证绑定的是控制台里已保存的凭证，不是 `={{ msg.xxx }}`
 
 ## 7. loadOptions 远程加载选项
 
@@ -292,6 +300,7 @@ schema。后端原样透传，由前端 `ParameterInputList` 遍历 `properties`
     "label": "分组名称",
     "nodes": [{
       "name": "MyNode", "label": "节点 UI 名称", "summary": "简述（≤10字）",
+      "icon": "default.svg",
       "parameters": { "method": "GET", "timeout": 30 }
     }]
   }]
@@ -299,7 +308,8 @@ schema。后端原样透传，由前端 `ParameterInputList` 遍历 `properties`
 
 // 扁平型：根级 nodes，适用于机器人等扁平列表
 { "nodes": [{ "name": "SendTextMsgNode",
-              "label": "文本消息", "summary": "推送文本消息", "parameters": {} }] }
+              "label": "文本消息", "summary": "推送文本消息",
+              "icon": "default.svg", "parameters": {} }] }
 ```
 
 | 字段 | 必填 | 说明 |
@@ -308,11 +318,13 @@ schema。后端原样透传，由前端 `ParameterInputList` 遍历 `properties`
 | 节点 `name` | 是 | 与 `@FlowNodeDescription(name)` 完全一致 |
 | 节点 `label` | 是 | UI 显示名 |
 | `summary` | 否 | **≤10 字**，超长被截断 |
+| `icon` | 推荐 | 默认 `"default.svg"`。需要自定义图标时再改成对应文件名 |
 | `parameters` | 否 | 与该节点 `properties` 的 `defaultValue` 对齐；无默认值写 `{}` 或省略 |
 
-**不要写 `icon`，也不要在工程里生成或提交 SVG。** 节点图标由控制台上传并管理
+每个节点都写 `"icon": "default.svg"`。只有用户明确要换图标时，才把该字段改成其它文件名。
+不要在工程里生成或提交 SVG：图标文件仍由控制台上传并管理
 （`GET/POST/DELETE .../bundles/{bundleId}/icons`），不打进 JAR，也不放在
-`src/main/resources`。脚手架生成的 `bundle.json` 省略该字段。
+`src/main/resources`。
 
 不需要根级 `credentials` 数组，凭证通过 SPI 自动发现。
 
@@ -334,4 +346,6 @@ schema。后端原样透传，由前端 `ParameterInputList` 遍历 `properties`
 | 12 | 用了 `loadOptions` 却无 `allow-create`/`clearable` | 远程失败时用户完全无法配置 |
 | 13 | `provider=bundle` 省略 `dependsOn` | 必须显式写出，无依赖写 `[]` |
 | 14 | 字段用 `type` 而非 `uiComponent` | 一律 `uiComponent` |
-| 15 | 在工程里生成 SVG，或 `bundle.json` 写 `icon` | 省略 `icon`；图标由平台上传管理 |
+| 15 | 省略 `icon`，或在工程里生成 SVG | 默认写 `"icon": "default.svg"`；要自定义再改文件名。SVG 由平台上传，不打进 JAR |
+| 16 | 可传值字段省略 `expression` | 默认 `"expression": true` 与 `"droppable": true`，否则无法写入 `={{ msg.xxx }}` |
+| 17 | `CredentialSelect` 设了 `expression: true` | 访问凭证不要开表达式 |

@@ -124,6 +124,8 @@ def inject_credential_fields(props: dict, credential_type: str, method_name) -> 
             "name": "resource",
             "label": "资源",
             "uiComponent": "Select",
+            "expression": True,
+            "droppable": True,
             "placeholder": "请选择资源",
             "typeOptions": {
                 # 远程不可达时仍可手输、可清空（见 reference/forms-schema.md §7）
@@ -193,6 +195,7 @@ def main() -> None:
                 "name": node_name,
                 "label": node_name,
                 "summary": "待补充",
+                "icon": "default.svg",
                 "parameters": defaults[node_name],
             } for node_name, _, _, _ in node_specs],
         }],
@@ -248,7 +251,7 @@ def main() -> None:
 
     print("\n完成。后续步骤：")
     print("  1. 编辑 src/main/resources/bundle.json 补全 label / summary")
-    print("     不要生成 SVG，也不要写 icon；节点图标由平台上传管理")
+    print("     节点 icon 默认为 default.svg，需要自定义图标时再改文件名")
     print("  2. 编辑 src/main/resources/properties/*.json 定义表单字段")
     print("  3. 实现节点 onMsg 业务逻辑")
     print("  4. 补全 README.md 与 CHANGELOG.md 中的 TODO")

@@ -80,6 +80,7 @@
       （按需 `filterable`），避免远程不可达时无法配置
 - [ ] `displayOptions` 只引用同级兄弟字段，条件值为数组
 - [ ] `CodeEditor` 存证书 / 纯文本时设了 `"enableExpression": false`
+- [ ] 2～5 个互斥短文案用 `Segmented`；选项多、要搜索或远程加载时用 `Select`（`Segmented` 不支持 `loadOptions`）
 - [ ] 节点 / 触发器 / Webhook 表单中，可传值字段设了 `expression: true` 与 `droppable: true`
 - [ ] `CredentialSelect`（访问凭证）未设 `expression`；`credentials/*.json` 也未开表达式
 - [ ] 未给编辑器类组件（`CodeEditor` / `SqlEditor` / `JsonEditor`）设顶层 `expression: true`

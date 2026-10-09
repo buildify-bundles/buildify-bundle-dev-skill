@@ -45,7 +45,7 @@ EDITOR_COMPONENTS = {"CodeEditor", "SqlEditor", "JsonEditor", "JsonExpressionInp
 # 节点表单里默认可切到表达式、供 Agent 传值的控件。
 # 访问凭证、编辑器、纯展示/操作，以及本身就是表达式控件的不在此列。
 EXPRESSION_DEFAULT_COMPONENTS = {
-    "Input", "Password", "InputNumber", "Select",
+    "Input", "Password", "InputNumber", "Select", "Segmented",
     "RadioGroup", "RadioButtonGroup", "CheckboxGroup",
     "Switch", "Slider",
     "DatePicker", "DateTimePicker", "TimePicker",
@@ -302,9 +302,26 @@ def walk_fields(fields, loc: str, path_prefix: str, ctx: dict) -> None:
             else:
                 check_credential_type(cred, loc, where, ctx)
 
+        # --- Segmented：静态短选项分段单选
+        if component == "Segmented":
+            if isinstance(type_options.get("loadOptions"), dict):
+                err(loc, f"{where} Segmented 不支持 loadOptions；选项较多、需要搜索或远程加载时改用 Select")
+            options = field.get("options")
+            if not isinstance(options, list) or not options:
+                warn(loc, f"{where} Segmented 需要顶层 options，适合 2～5 个互斥短文案")
+            elif len(options) > 5:
+                warn(loc, f"{where} Segmented 适合 2～5 项，当前 {len(options)} 项；"
+                          "选项较多时改用 Select")
+            direction = type_options.get("direction")
+            if direction is not None and direction not in ("horizontal", "vertical"):
+                err(loc, f"{where} Segmented 的 direction 只能是 horizontal 或 vertical")
+            size = type_options.get("size")
+            if size is not None and size not in ("large", "default", "small"):
+                err(loc, f"{where} Segmented 的 size 只能是 large、default 或 small")
+
         # --- 远程加载选项
         load_options = type_options.get("loadOptions")
-        if isinstance(load_options, dict):
+        if component != "Segmented" and isinstance(load_options, dict):
             check_invocation(load_options, loc, f"{where}.loadOptions", ctx)
             if component in ("Select", "Cascader"):
                 for cap in ("allow-create", "clearable"):

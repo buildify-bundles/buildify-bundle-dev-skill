@@ -61,7 +61,7 @@ schema。后端原样透传，由前端 `ParameterInputList` 遍历 `properties`
   "rules": [],                 // 额外 async-validator 规则
 
   // ── 选项 ──
-  "options": [],               // 静态选项，或集合类的子字段定义
+  "options": [],               // Select / Radio / Segmented 的静态选项，或集合类子字段
 
   // ── 表达式 ──
   "expression": true,          // 可传值字段默认 true；访问凭证 CredentialSelect 不要设
@@ -99,8 +99,9 @@ schema。后端原样透传，由前端 `ParameterInputList` 遍历 `properties`
 ├─ 颜色                      → ColorPicker ／ 边框 → BorderSelect
 ├─ 布尔逻辑表达式（SpEL）     → BooleanExpressionInput
 ├─ 从列表选
-│   ├─ 单选 ≤5 项固定        → RadioGroup / RadioButtonGroup
-│   ├─ 单选多项或动态         → Select
+│   ├─ 单选 2～5 项、文案短   → Segmented（默认铺满宽度）
+│   ├─ 单选 ≤5 项、单选按钮   → RadioGroup / RadioButtonGroup
+│   ├─ 单选多项、需搜索或远程 → Select
 │   ├─ 级联                  → Cascader
 │   ├─ 画布节点              → NodeSelect
 │   ├─ AI 模型               → ModelSelect
@@ -160,7 +161,7 @@ schema。后端原样透传，由前端 `ParameterInputList` 遍历 `properties`
 
 | 控件 | 表达式 |
 |---|---|
-| `Input` / `Password` / `InputNumber` / `Select` / `RadioGroup` / `RadioButtonGroup` / `CheckboxGroup` / `Switch` / `Slider` / `DatePicker` / `DateTimePicker` / `TimePicker` / `Cascader` / `ColorPicker` | **默认** `"expression": true` 且 `"droppable": true` |
+| `Input` / `Password` / `InputNumber` / `Select` / `Segmented` / `RadioGroup` / `RadioButtonGroup` / `CheckboxGroup` / `Switch` / `Slider` / `DatePicker` / `DateTimePicker` / `TimePicker` / `Cascader` / `ColorPicker` | **默认** `"expression": true` 且 `"droppable": true` |
 | `CredentialSelect`（访问凭证） | **不要**设 `expression`。选的是已保存的凭证实例，不按消息求值 |
 | `ExpressionInput` | 强制表达式模式，值始终带 `=` 前缀，不必再写 `expression` |
 | `JsonExpressionInput` | 内置 `={{ }}`，不必再写顶层 `expression` |
@@ -355,3 +356,4 @@ schema。后端原样透传，由前端 `ParameterInputList` 遍历 `properties`
 | 16 | 可传值字段省略 `expression` | 默认 `"expression": true` 与 `"droppable": true`，否则无法写入 `={{ msg.xxx }}` |
 | 17 | `CredentialSelect` 设了 `expression: true` | 访问凭证不要开表达式 |
 | 18 | 数组让用户手写 JSON | 用 `FixedCollection`，界面可动态添加项 |
+| 19 | `Segmented` 写了 `loadOptions`，或选项超过 5 个 | 只做静态单选；选项多、要搜索或远程加载时改用 `Select` |

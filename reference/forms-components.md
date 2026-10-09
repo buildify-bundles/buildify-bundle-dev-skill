@@ -177,10 +177,50 @@ Monaco 多语言编辑器，值为 `String`。
 
 值格式：`emitPath: true` → `["zj","hz","xihu"]`；`false` → 叶子 `value`；`multiple` → 数组。
 
+### Segmented
+
+基于 Element Plus `el-segmented` 的分段选择器。适合 **2～5 个互斥、文案较短** 的单选，
+默认铺满字段宽度。选项较多、需要搜索或远程加载时用 `Select`。多选用 `CheckboxGroup`。
+要单选按钮样式时用 `RadioGroup` / `RadioButtonGroup`。
+
+选项写在字段顶层 `options`，与 `Select` / `RadioGroup` 相同。也支持字符串、数字、布尔值数组，
+此时展示文案与值相同。
+
+| 字段 | 说明 |
+|---|---|
+| `value` | `String` / `Number` / `Boolean`，选中后写入的值 |
+| `label` | 分段文案；缺省时用 `value` |
+| `disabled` | 禁用这一项 |
+| `icon` | 可选，iconfont 名称（不含 `icon-` 前缀），如 `list` |
+
+```jsonc
+"typeOptions": {
+  "block": true,              // 默认 true，铺满父级宽度
+  "size": "small",            // large | default | small，默认 small
+  "direction": "horizontal",  // horizontal | vertical，默认 horizontal
+  "style": "width:200px"      // 可选，作用在控件外层
+}
+```
+
+```json
+{ "name": "matchMode", "label": "匹配方式", "uiComponent": "Segmented",
+  "default": "and", "expression": true, "droppable": true,
+  "options": [
+    { "value": "and", "label": "全部满足" },
+    { "value": "or", "label": "任一满足" }
+  ] }
+```
+
+带图标且不铺满时设 `"typeOptions": { "block": false }`，选项加 `"icon": "list"`。
+垂直分段设 `"direction": "vertical"`。
+
+节点参数里的值若被存成字符串，且与某个选项 `value` 的字符串形式相同，组件会改回该选项的原始类型
+（`"1"` → `1`，`"true"` → `true`）。不支持 `loadOptions`。
+
 ### RadioGroup / RadioButtonGroup / CheckboxGroup
 
 原生控件，选项写 `parameter.options`。前两者值为 `String`，`CheckboxGroup` 值为 `Array`。
-选项 ≤5 且固定不变时优先用 RadioButtonGroup，比 Select 少一次点击。
+2～5 个短文案的互斥项优先用 `Segmented`。需要单选按钮、且选项 ≤5 固定不变时用 RadioButtonGroup。
 
 ### CredentialSelect
 

@@ -22,7 +22,7 @@
     {
       "name": "method",
       "label": "请求方法",
-      "uiComponent": "RadioButtonGroup",
+      "uiComponent": "Segmented",
       "required": true,
       "expression": true,
       "droppable": true,

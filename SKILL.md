@@ -43,6 +43,7 @@ Bundle 开发进度：
 | 场景 | 读 / 做 |
 |---|---|
 | **新建 Bundle** | 执行下方 `scaffold_bundle.py` |
+| **对接三方 HTTP API** | 加 `--generic-api ApiCall`，见 [reference/generic-api.md](reference/generic-api.md) |
 | **已有项目加节点** | 勿重跑 scaffold；复制 `templates/java/`、`templates/forms/`，并补 SPI |
 | **实现 / 审查节点代码** | [coding-rules.md](coding-rules.md) |
 | **写 / 改表单 schema** | [reference/forms-schema.md](reference/forms-schema.md) |
@@ -73,7 +74,9 @@ python3 <skill-root>/scripts/scaffold_bundle.py \
 ```
 
 可重复：`--node` / `--trigger` / `--webhook` / `--credential PascalCase` /
-`--method ClassName:methodName`。至少提供一个节点类选项。
+`--method ClassName:methodName` / `--generic-api ApiCall`。至少提供一个节点类选项。
+对接三方 HTTP 时加上 `--generic-api`（类名以 `ApiCall` 结尾，且要有 `--credential`）：
+文档里还没有专用节点的接口，Agent 用这个节点按文档填 `method` / `path` / `query` / `headers` / `body`。
 
 **validate_bundle.py** — 校验命名、SPI、pom、表单、凭证、complete、RPC、资源泄漏、
 参数变更后的重启 / `onParametersUpdated` 热更新；
@@ -117,6 +120,7 @@ Maven 依赖：`cn.buildify:buildify-bundle-api`（版本见 `templates/project/
    图标文件由平台上传管理，不打进 JAR、不放在 `src/main/resources`
 8. 需要人逐项填写的数组用 `FixedCollection`（可增删），不要用 `JsonEditor` 手写 JSON 数组
 9. 参数变更要么 `isRestartRequired` 返回 `true` 并重启，要么 `onParametersUpdated` 用新参数重新赋值。路由、cron、连接必须重启
+10. 对接三方 HTTP API 时提供以 `ApiCall` 结尾的通用调用节点。未实现的接口按厂商文档填写，不要为每个接口新做节点
 
 ## 代码模板
 
@@ -125,5 +129,5 @@ Maven 依赖：`cn.buildify:buildify-bundle-api`（版本见 `templates/project/
 | 目录 | 内容 |
 |---|---|
 | `templates/project/` | `pom.xml`、`bundle.json`、README / CHANGELOG 骨架 |
-| `templates/java/` | Node / Trigger / Webhook / CredentialsProvider / MethodExecutor |
-| `templates/forms/` | 节点 / 触发器 / Webhook / 凭证 properties JSON |
+| `templates/java/` | Node / GenericApiNode / Trigger / Webhook / CredentialsProvider / MethodExecutor |
+| `templates/forms/` | 节点 / 通用调用 / 触发器 / Webhook / 凭证 properties JSON |

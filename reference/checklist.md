@@ -36,6 +36,8 @@
 - [ ] 不触发重启的参数在 `onParametersUpdated()` 中用 **newParameters** 重新赋值
       （与 `initialize()` 共用 `applyParameters()`）；未覆写 `isRestartRequired()` 时任意变化都会重启
 - [ ] 路由、cron、连接、连接池所用参数在变化时让 `isRestartRequired()` 返回 `true`
+- [ ] 对接三方 HTTP API 时包含以 `ApiCall` 结尾的通用调用节点。尚未实现的接口按厂商文档填
+      `method` / `path` / `query` / `headers` / `body`，鉴权走凭证，README 保留「通用调用」一节
 - [ ] 🔍 `onFailure` 中日志分级：`FlowNodeException` 用 `warn`，未知异常用 `error` 并保留堆栈
 
 ## 触发器节点

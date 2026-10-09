@@ -1,0 +1,115 @@
+{
+  "defaultValue": {
+    "method": "GET",
+    "timeout": 30
+  },
+  "properties": [
+    {
+      "name": "method",
+      "label": "请求方法",
+      "uiComponent": "Segmented",
+      "required": true,
+      "expression": true,
+      "droppable": true,
+      "hint": "按接口文档中的 HTTP 方法填写",
+      "options": [
+        { "label": "GET", "value": "GET" },
+        { "label": "POST", "value": "POST" },
+        { "label": "PUT", "value": "PUT" },
+        { "label": "PATCH", "value": "PATCH" },
+        { "label": "DELETE", "value": "DELETE" }
+      ]
+    },
+    {
+      "name": "path",
+      "label": "请求路径",
+      "uiComponent": "Input",
+      "required": true,
+      "expression": true,
+      "droppable": true,
+      "placeholder": "/v1/resources/{{ msg.id }}",
+      "hint": "按接口文档填写，以 / 开头，不含域名。域名来自凭证 host"
+    },
+    {
+      "name": "query",
+      "label": "查询参数",
+      "uiComponent": "FixedCollection",
+      "defaultValue": { "key": "", "value": "" },
+      "typeOptions": {
+        "addText": "添加查询参数",
+        "emptyText": "暂未添加",
+        "sortable": true,
+        "border": true
+      },
+      "options": [
+        {
+          "name": "key",
+          "label": "名称",
+          "uiComponent": "Input",
+          "required": true,
+          "expression": true,
+          "droppable": true
+        },
+        {
+          "name": "value",
+          "label": "值",
+          "uiComponent": "Input",
+          "expression": true,
+          "droppable": true
+        }
+      ]
+    },
+    {
+      "name": "headers",
+      "label": "请求头",
+      "uiComponent": "FixedCollection",
+      "defaultValue": { "key": "", "value": "" },
+      "hint": "文档要求的额外请求头。未写鉴权头时自动加 Authorization: Bearer",
+      "typeOptions": {
+        "addText": "添加请求头",
+        "emptyText": "暂未添加",
+        "sortable": true,
+        "border": true
+      },
+      "options": [
+        {
+          "name": "key",
+          "label": "名称",
+          "uiComponent": "Input",
+          "required": true,
+          "expression": true,
+          "droppable": true
+        },
+        {
+          "name": "value",
+          "label": "值",
+          "uiComponent": "Input",
+          "expression": true,
+          "droppable": true
+        }
+      ]
+    },
+    {
+      "name": "body",
+      "label": "请求体",
+      "uiComponent": "JsonExpressionInput",
+      "hint": "按接口文档填写 JSON 正文",
+      "displayOptions": {
+        "show": { "method": ["POST", "PUT", "PATCH", "DELETE"] }
+      }
+    },
+    {
+      "name": "timeout",
+      "label": "超时（秒）",
+      "uiComponent": "InputNumber",
+      "expression": true,
+      "droppable": true,
+      "hint": "更改超时后节点将自动重启",
+      "typeOptions": {
+        "min": 1,
+        "max": 300,
+        "style": "width: 200px"
+      }
+    }
+  ]
+}

@@ -6,7 +6,8 @@
         --group-id com.example --artifact-id my-bundle \
         --bundle-name example/my-bundle --package com.example.bundle \
         --node MyNode [--trigger MyTriggerNode] [--webhook MyWebhookNode] \
-        [--credential MyApiCredential] [--method GetTablesExecutor:getTables]
+        [--credential MyApiCredential] [--method GetTablesExecutor:getTables] \
+        [--generic-api ApiCall]
 
 同时提供 --credential 时，普通节点表单会自动生成 CredentialSelect 字段；
 再配合 --method 时会生成一个通过 credentialsRef 联动的远程 Select 字段。
@@ -63,6 +64,10 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--webhook", action="append", default=[], help="Webhook 触发器类名，可重复")
     p.add_argument("--credential", action="append", default=[],
                    help="凭证类型标识（PascalCase，如 MyApiCredential），可重复")
+    p.add_argument("--generic-api", action="append", default=[],
+                   help="三方接口通用调用节点类名，须以 ApiCall 结尾，可重复。"
+                        "未做成专用节点的接口按文档填 method/path/query/headers/body。"
+                        "需同时提供 --credential")
     p.add_argument("--method", action="append", default=[],
                    help="动态方法，格式 类名:方法名（如 GetTablesExecutor:getTables），可重复")
     p.add_argument("--group-label", default="通用", help="bundle.json 中的分组显示名")
@@ -77,12 +82,17 @@ def validate(args: argparse.Namespace) -> None:
         errors.append(f"--bundle-name 应为 '组织/名称' 小写格式，实际: {args.bundle_name}")
     if not PACKAGE_RE.match(args.package):
         errors.append(f"--package 不是合法的 Java 包名: {args.package}")
-    all_nodes = args.node + args.trigger + args.webhook
+    all_nodes = args.node + args.trigger + args.webhook + args.generic_api
     if not all_nodes:
-        errors.append("至少需要一个 --node / --trigger / --webhook")
+        errors.append("至少需要一个 --node / --trigger / --webhook / --generic-api")
+    if args.generic_api and not args.credential:
+        errors.append("--generic-api 需要同时提供 --credential，鉴权从凭证读取")
     for name in all_nodes:
         if not NODE_NAME_RE.match(name):
             errors.append(f"节点类名必须是 PascalCase: {name}")
+    for name in args.generic_api:
+        if NODE_NAME_RE.match(name) and not name.endswith("ApiCall"):
+            errors.append(f"--generic-api 类名必须以 ApiCall 结尾，便于按文档找到通用调用: {name}")
     for name in args.credential:
         if not NODE_NAME_RE.match(name):
             errors.append(f"凭证类型标识必须是 PascalCase（与 propertiesFile 文件名一致）: {name}")
@@ -102,6 +112,32 @@ def validate(args: argparse.Namespace) -> None:
         for e in errors:
             print(f"ERROR  {e}", file=sys.stderr)
         raise SystemExit(1)
+
+
+def generic_api_readme(names: list) -> str:
+    rows = "\n".join(
+        f"| `{name}` | 通用调用 | 文档中尚未做成专用节点的接口 |" for name in names)
+    return f"""
+## 通用调用
+
+厂商文档里有、但还没有专用节点的接口，用下列节点按文档调用。不要另造节点名。
+
+| 节点 | 类型 | 说明 |
+|------|------|------|
+{rows}
+
+| 参数 | 怎么填 |
+|------|--------|
+| `method` | 文档中的 HTTP 方法 |
+| `path` | 文档中的路径，以 `/` 开头，不含域名。支持 `={{{{ msg.xxx }}}}` |
+| `query` | 文档中的查询参数，一项一行 |
+| `headers` | 文档要求的额外请求头。未写鉴权头时自动加 `Authorization: Bearer <凭证 apiKey>` |
+| `body` | 文档中的 JSON 正文。GET 不显示此项 |
+
+域名和密钥来自凭证的 `host`、`port`、`apiKey`。`path` 以 `http://` 或 `https://` 开头时当作完整地址。
+
+成功时输出 `msg.output.statusCode` 与 `msg.output.body`（含 4xx/5xx）。连接失败或超时走 Failure。
+"""
 
 
 def inject_credential_fields(props: dict, credential_type: str, method_name) -> dict:
@@ -157,10 +193,13 @@ def main() -> None:
 
     node_specs = ([(n, "java/Node.java.tmpl", "forms/node-properties.json", True)
                    for n in args.node]
+                  + [(n, "java/GenericApiNode.java.tmpl", "forms/generic-api-properties.json", True)
+                     for n in args.generic_api]
                   + [(n, "java/TriggerNode.java.tmpl", "forms/trigger-properties.json", False)
                      for n in args.trigger]
                   + [(n, "java/WebhookNode.java.tmpl", "forms/webhook-properties.json", False)
                      for n in args.webhook])
+    generic_names = set(args.generic_api)
 
     primary_credential = args.credential[0] if args.credential else None
     primary_method = args.method[0].split(":", 1)[1] if args.method and args.credential else None
@@ -194,7 +233,7 @@ def main() -> None:
             "nodes": [{
                 "name": node_name,
                 "label": node_name,
-                "summary": "待补充",
+                "summary": "按文档调用" if node_name in generic_names else "待补充",
                 "icon": "default.svg",
                 "parameters": defaults[node_name],
             } for node_name, _, _, _ in node_specs],
@@ -238,11 +277,14 @@ def main() -> None:
 
     # 文档
     first_node = node_specs[0][0]
-    write(root / "README.md", render("project/README.md.tmpl", {
+    readme = render("project/README.md.tmpl", {
         "ARTIFACT_ID": args.artifact_id,
         "NODE_NAME": first_node,
         "PACKAGE_PATH": "/".join(args.package.split(".")),
-    }), args.force)
+    })
+    if args.generic_api:
+        readme += generic_api_readme(args.generic_api)
+    write(root / "README.md", readme, args.force)
     write(root / "CHANGELOG.md", render("project/CHANGELOG.md.tmpl", {
         "VERSION": args.version,
         "DATE": datetime.date.today().isoformat(),
@@ -254,6 +296,8 @@ def main() -> None:
     print("     节点 icon 默认为 default.svg，需要自定义图标时再改文件名")
     print("  2. 编辑 src/main/resources/properties/*.json 定义表单字段")
     print("  3. 实现节点 onMsg 业务逻辑")
+    if args.generic_api:
+        print("     通用调用节点已生成：未实现的接口按厂商文档填 method/path/query/headers/body")
     print("  4. 补全 README.md 与 CHANGELOG.md 中的 TODO")
     print(f"  5. python3 {Path(__file__).parent / 'validate_bundle.py'} {root}")
     print("  6. mvn -q clean package")

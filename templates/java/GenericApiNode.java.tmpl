@@ -1,0 +1,258 @@
+package {{PACKAGE}}.nodes;
+
+import cn.buildify.bundle.api.Context;
+import cn.buildify.bundle.api.FlowNode;
+import cn.buildify.bundle.api.FlowNodeDescription;
+import cn.buildify.bundle.api.FlowNodeException;
+import cn.buildify.bundle.api.Relation;
+import cn.buildify.bundle.api.credentials.Credentials;
+import cn.buildify.bundle.api.json.JsonValue;
+import cn.buildify.bundle.api.json.JsonValueFactory;
+import cn.buildify.bundle.api.message.Message;
+import cn.buildify.bundle.api.message.support.MessageBuilder;
+import cn.buildify.bundle.api.status.NodeStatus;
+import lombok.extern.slf4j.Slf4j;
+
+import java.net.URI;
+import java.net.URLEncoder;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+import java.nio.charset.StandardCharsets;
+import java.time.Duration;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+
+/**
+ * 三方 HTTP 的通用调用。专用节点没覆盖的接口，按厂商文档填 method / path / query / headers / body。
+ */
+@Slf4j
+@FlowNodeDescription(name = "{{NODE_NAME}}", propertiesFile = "properties/{{NODE_NAME}}.json")
+public class {{NODE_NAME}} implements FlowNode {
+
+    private HttpClient httpClient;
+    private int timeout;
+    private JsonValue dynamicParameters;
+
+    @Override
+    public void initialize(Context context, JsonValue parameters) {
+        this.timeout = parameters.path("timeout").asInt(30);
+        if (this.timeout <= 0) {
+            throw new FlowNodeException("INVALID_TIMEOUT", "timeout 必须大于 0");
+        }
+        this.httpClient = HttpClient.newBuilder()
+                .connectTimeout(Duration.ofSeconds(timeout))
+                .followRedirects(HttpClient.Redirect.NORMAL)
+                .build();
+        applyParameters(parameters);
+        context.setStatus(NodeStatus.builder().color("green").text("就绪").build());
+    }
+
+    /** 只有超时影响连接，其余参数在 onParametersUpdated 中热更新 */
+    @Override
+    public boolean isRestartRequired(JsonValue newParameters, JsonValue oldParameters) {
+        return newParameters.path("timeout").asInt(30) != oldParameters.path("timeout").asInt(30);
+    }
+
+    @Override
+    public void onParametersUpdated(Context context, JsonValue newParameters, JsonValue oldParameters) {
+        applyParameters(newParameters);
+    }
+
+    private void applyParameters(JsonValue parameters) {
+        this.dynamicParameters = JsonValueFactory.objectNode()
+                .put("method", parameters.path("method"))
+                .put("path", parameters.path("path"))
+                .put("query", parameters.path("query"))
+                .put("headers", parameters.path("headers"))
+                .put("body", parameters.path("body"));
+    }
+
+    @Override
+    public List<Relation> getRelations() {
+        return List.of(Relation.RELATIONSHIP_SUCCESS, Relation.RELATIONSHIP_FAILURE);
+    }
+
+    @Override
+    public void onMsg(Context context, Message<?> message) {
+        JsonValue payload = getPayload(message, JsonValue.class);
+        JsonValue parameters = context.resolveExpressions(dynamicParameters, payload);
+
+        Credentials credentials = context.getCredentials("credentialsId");
+        if (credentials == null || credentials.getData() == null) {
+            context.tellFailure(message, new FlowNodeException("MISSING_CREDENTIALS", "未选择访问凭证"));
+            return;
+        }
+        Map<String, Object> data = credentials.getData();
+        String host = data.get("host") == null ? "" : String.valueOf(data.get("host")).trim();
+        if (host.isEmpty()) {
+            context.tellFailure(message, new FlowNodeException("MISSING_HOST", "凭证 host 不能为空"));
+            return;
+        }
+        int port = data.get("port") instanceof Number ? ((Number) data.get("port")).intValue() : 443;
+        String apiKey = data.get("apiKey") == null ? "" : String.valueOf(data.get("apiKey"));
+
+        String method = parameters.path("method").asText("GET").trim().toUpperCase(Locale.ROOT);
+        String path = parameters.path("path").asText("");
+        String url = buildUrl(host, port, path, parameters.path("query"));
+
+        HttpRequest request;
+        try {
+            HttpRequest.Builder builder = HttpRequest.newBuilder()
+                    .uri(URI.create(url))
+                    .timeout(Duration.ofSeconds(timeout));
+            boolean[] headerFlags = applyHeaders(builder, parameters.path("headers"));
+            boolean customAuth = headerFlags[0];
+            boolean hasContentType = headerFlags[1];
+            if (!customAuth) {
+                if (apiKey.isBlank()) {
+                    context.tellFailure(message, new FlowNodeException(
+                            "MISSING_API_KEY", "凭证 apiKey 为空，且请求头未提供鉴权"));
+                    return;
+                }
+                builder.header("Authorization", "Bearer " + apiKey);
+            }
+            HttpRequest.BodyPublisher publisher = HttpRequest.BodyPublishers.noBody();
+            if (sendsBody(method)) {
+                JsonValue body = parameters.path("body");
+                if (!body.isMissingNode() && !body.isNull()) {
+                    publisher = HttpRequest.BodyPublishers.ofString(body.toJson());
+                    if (!hasContentType) {
+                        builder.header("Content-Type", "application/json");
+                    }
+                }
+            }
+            request = builder.method(method, publisher).build();
+        } catch (Exception e) {
+            context.tellFailure(message,
+                    new FlowNodeException("INVALID_URL", "请求地址无效: " + url, e).with("url", url));
+            return;
+        }
+
+        httpClient.sendAsync(request, HttpResponse.BodyHandlers.ofString())
+                .whenComplete((response, error) -> {
+                    if (error != null) {
+                        log.error("[{{NODE_NAME}}] 请求失败 url={}", url, error);
+                        context.tellFailure(message, new FlowNodeException(
+                                "HTTP_IO_ERROR", "请求失败: " + error.getMessage(), error).with("url", url));
+                        context.complete(message);
+                        return;
+                    }
+                    try {
+                        JsonValue output = JsonValueFactory.objectNode()
+                                .put("statusCode", response.statusCode())
+                                .put("body", parseBody(response.body()));
+                        JsonValue newPayload = JsonValueFactory.objectNode().put("output", output);
+                        context.tellSuccess(MessageBuilder.withPayload(newPayload)
+                                .copyHeaders(message.getHeaders()).build());
+                    } catch (Throwable e) {
+                        log.error("[{{NODE_NAME}}] 处理响应失败", e);
+                        context.tellFailure(message, new FlowNodeException("RESPONSE_ERROR", "处理响应失败", e));
+                    } finally {
+                        context.complete(message);
+                    }
+                });
+    }
+
+    @Override
+    public void destroy(Context context) {
+        if (httpClient != null) {
+            httpClient.close();
+            httpClient = null;
+        }
+    }
+
+    /** @return [0] 是否已写鉴权头，[1] 是否已写 Content-Type */
+    private static boolean[] applyHeaders(HttpRequest.Builder builder, JsonValue headers) {
+        boolean customAuth = false;
+        boolean contentType = false;
+        if (headers == null || headers.isMissingNode() || headers.isNull()) {
+            return new boolean[] {false, false};
+        }
+        for (JsonValue item : headers.asArray()) {
+            String key = item.path("key").asText("").trim();
+            if (key.isEmpty()) {
+                continue;
+            }
+            builder.header(key, item.path("value").asText(""));
+            if (isAuthHeader(key)) {
+                customAuth = true;
+            }
+            if (key.equalsIgnoreCase("Content-Type")) {
+                contentType = true;
+            }
+        }
+        return new boolean[] {customAuth, contentType};
+    }
+
+    private static boolean sendsBody(String method) {
+        return "POST".equals(method) || "PUT".equals(method)
+                || "PATCH".equals(method) || "DELETE".equals(method);
+    }
+
+    private static boolean isAuthHeader(String name) {
+        String normalized = name.toLowerCase(Locale.ROOT);
+        return normalized.equals("authorization")
+                || normalized.equals("x-api-key")
+                || normalized.equals("api-key");
+    }
+
+    private static String buildUrl(String host, int port, String path, JsonValue query) {
+        String raw = path == null ? "" : path.trim();
+        String url;
+        if (raw.startsWith("http://") || raw.startsWith("https://")) {
+            url = raw;
+        } else {
+            String base;
+            if (host.startsWith("http://") || host.startsWith("https://")) {
+                base = host.endsWith("/") ? host.substring(0, host.length() - 1) : host;
+            } else {
+                int p = port <= 0 ? 443 : port;
+                String scheme = p == 80 ? "http" : "https";
+                boolean omit = (p == 443 && scheme.equals("https")) || (p == 80 && scheme.equals("http"));
+                base = scheme + "://" + host + (omit ? "" : ":" + p);
+            }
+            if (!raw.isEmpty() && !raw.startsWith("/")) {
+                raw = "/" + raw;
+            }
+            url = base + raw;
+        }
+        String qs = encodeQuery(query);
+        if (qs.isEmpty()) {
+            return url;
+        }
+        return url + (url.contains("?") ? "&" : "?") + qs;
+    }
+
+    private static String encodeQuery(JsonValue query) {
+        if (query == null || query.isMissingNode() || query.isNull()) {
+            return "";
+        }
+        StringBuilder out = new StringBuilder();
+        for (JsonValue item : query.asArray()) {
+            String key = item.path("key").asText("").trim();
+            if (key.isEmpty()) {
+                continue;
+            }
+            if (out.length() > 0) {
+                out.append('&');
+            }
+            out.append(URLEncoder.encode(key, StandardCharsets.UTF_8))
+                    .append('=')
+                    .append(URLEncoder.encode(item.path("value").asText(""), StandardCharsets.UTF_8));
+        }
+        return out.toString();
+    }
+
+    private static JsonValue parseBody(String body) {
+        if (body == null || body.isBlank()) {
+            return JsonValueFactory.objectNode();
+        }
+        try {
+            return JsonValueFactory.fromJson(body);
+        } catch (Exception e) {
+            return JsonValueFactory.objectNode().put("raw", body);
+        }
+    }
+}

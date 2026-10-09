@@ -75,7 +75,8 @@ python3 <skill-root>/scripts/scaffold_bundle.py \
 可重复：`--node` / `--trigger` / `--webhook` / `--credential PascalCase` /
 `--method ClassName:methodName`。至少提供一个节点类选项。
 
-**validate_bundle.py** — 校验命名、SPI、pom、表单、凭证、complete、RPC、资源泄漏；
+**validate_bundle.py** — 校验命名、SPI、pom、表单、凭证、complete、RPC、资源泄漏、
+参数变更后的重启 / `onParametersUpdated` 热更新；
 `bundle.json` 节点缺 `icon`（默认应为 `"default.svg"`）以及 resources 下的 SVG 记 WARNING
 （图标文件由平台上传管理，不要打进 JAR）：
 
@@ -115,6 +116,7 @@ Maven 依赖：`cn.buildify:buildify-bundle-api`（版本见 `templates/project/
 7. 节点 `icon` 默认写 `"default.svg"`，需要自定义图标时再改文件名。不要在工程里生成 SVG，
    图标文件由平台上传管理，不打进 JAR、不放在 `src/main/resources`
 8. 需要人逐项填写的数组用 `FixedCollection`（可增删），不要用 `JsonEditor` 手写 JSON 数组
+9. 参数变更要么 `isRestartRequired` 返回 `true` 并重启，要么 `onParametersUpdated` 用新参数重新赋值。路由、cron、连接必须重启
 
 ## 代码模板
 

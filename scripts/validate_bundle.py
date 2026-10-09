@@ -8,7 +8,8 @@
 reference/forms-components.md 保持一致。
 
 检查项：命名一致性、SPI 注册、pom 配置、表单 schema 合法性、凭证字段规范、
-消息 complete、触发器约定、Node Service RPC、资源释放、异常与日志规范、README/CHANGELOG。
+消息 complete、触发器约定、Node Service RPC、资源释放、参数重启与热更新、
+异常与日志规范、README/CHANGELOG。
 
 退出码：0 = 通过；1 = 存在 ERROR（--strict 时 WARNING 也算失败）。
 仅依赖 Python 3.8+ 标准库。
@@ -568,6 +569,196 @@ def check_node_service(jf: JavaFile, is_method_executor: bool = False) -> None:
                       "禁止回退到 @NodeService.value()")
 
 
+def _java_methods(code: str) -> dict:
+    """提取类方法：name -> (参数列表, 方法体)。"""
+    found = {}
+    pattern = re.compile(
+        r"(?:public|protected|private)\s+"
+        r"(?:static\s+|final\s+|synchronized\s+)*"
+        r"(?!class\b|interface\b|enum\b)"
+        r"[\w.<>,\[\]]+\s+"
+        r"([A-Za-z_]\w*)\s*"
+        r"\(([^)]*)\)\s*"
+        r"(?:throws\s+[^{]+)?\{")
+    for match in pattern.finditer(code):
+        open_brace = match.end() - 1
+        found[match.group(1)] = (match.group(2), _brace_block(code, open_brace))
+    return found
+
+
+def _brace_block(code: str, open_brace: int) -> str:
+    depth = 0
+    i = open_brace
+    n = len(code)
+    while i < n:
+        c = code[i]
+        if c in "\"'":
+            i += 1
+            while i < n:
+                if code[i] == "\\":
+                    i += 2
+                    continue
+                if code[i] == c:
+                    break
+                i += 1
+        elif c == "{":
+            depth += 1
+        elif c == "}":
+            depth -= 1
+            if depth == 0:
+                return code[open_brace + 1:i]
+        i += 1
+    return code[open_brace + 1:]
+
+
+def _json_param_names(param_list: str) -> list:
+    names = []
+    for part in param_list.split(","):
+        part = part.strip()
+        if "JsonValue" not in part:
+            continue
+        tokens = part.split()
+        if tokens:
+            names.append(tokens[-1])
+    return names
+
+
+def _path_fields(body: str, receivers: set) -> set:
+    fields = set()
+    for recv in receivers:
+        fields.update(re.findall(
+            r"\b%s\s*\.\s*path\s*\(\s*\"([^\"]+)\"" % re.escape(recv), body))
+    return fields
+
+
+def _single_arg_calls(body: str):
+    return re.findall(r"(?:this\.)?([A-Za-z_]\w*)\s*\(\s*([A-Za-z_]\w*)\s*\)", body)
+
+
+def _fields_via(methods: dict, name: str, receivers: set, seen: set) -> set:
+    key = (name, tuple(sorted(receivers)))
+    if key in seen or name not in methods or not receivers:
+        return set()
+    seen.add(key)
+    params, body = methods[name]
+    fields = _path_fields(body, receivers)
+    for callee, arg in _single_arg_calls(body):
+        if arg not in receivers or callee not in methods:
+            continue
+        callee_json = _json_param_names(methods[callee][0])
+        if len(callee_json) == 1:
+            fields |= _fields_via(methods, callee, {callee_json[0]}, seen)
+    return fields
+
+
+def _compact(body: str) -> str:
+    return re.sub(r"\s+", "", body)
+
+
+def _restarts_on_any_change(body: str, new_name: str, old_name: str) -> bool:
+    compact = _compact(body)
+    new_name, old_name = re.escape(new_name), re.escape(old_name)
+    patterns = (
+        r"returntrue;",
+        r"return!%s\.equals\(%s\);" % (new_name, old_name),
+        r"return!%s\.equals\(%s\);" % (old_name, new_name),
+        r"return!Objects\.equals\(%s,%s\);" % (new_name, old_name),
+        r"return!Objects\.equals\(%s,%s\);" % (old_name, new_name),
+    )
+    return any(re.fullmatch(p, compact) for p in patterns)
+
+
+RESOURCE_CALL = re.compile(
+    r"getRouter\(\)\s*\.\s*register|Route\.create\s*\(|\.schedule\s*\(|"
+    r"HttpClient\.newBuilder\s*\(|createSandboxExecutor\s*\(|\bHikari\b|\bDataSource\b")
+
+
+def _lifecycle_fields(body: str) -> set:
+    """从 initialize 中找出用于注册路由、定时任务或创建连接的参数名。"""
+    if not RESOURCE_CALL.search(body):
+        return set()
+    fields = set()
+    for var, field in re.findall(
+            r"\b([A-Za-z_]\w*)\s*=\s*[^;]*?\.path\s*\(\s*\"([^\"]+)\"", body):
+        if len(re.findall(r"\b%s\b" % re.escape(var), body)) >= 2:
+            fields.add(field)
+    fields.update(re.findall(
+        r"(?:register|Route\.create|\.schedule|connectTimeout|\.timeout)\s*\([^;{]*?"
+        r"\.path\s*\(\s*\"([^\"]+)\"",
+        body, re.S))
+    return fields
+
+
+def check_parameter_refresh(jf: JavaFile) -> None:
+    """参数变更必须要么重启节点，要么在 onParametersUpdated 中用新参数重新生效。
+
+    默认 isRestartRequired 在任意参数变化时返回 true，destroy 后再 initialize，流程会更新。
+    一旦覆写为「部分字段不重启」，这些字段必须在 onParametersUpdated 里重新赋值，
+    否则画布上的新参数不会进入正在运行的节点。
+    """
+    code, loc = jf.code, jf.rel
+    if "isRestartRequired" not in code:
+        return
+    methods = _java_methods(code)
+    restart = methods.get("isRestartRequired")
+    if restart is None:
+        warn(loc, "无法解析 isRestartRequired()，请确认参数变化会重启节点，"
+                  "或不重启的字段在 onParametersUpdated() 中用新参数重新赋值")
+        return
+
+    params, body = restart
+    json_params = _json_param_names(params)
+    if len(json_params) < 2:
+        warn(loc, "isRestartRequired 应接收新、旧两个 JsonValue 参数")
+        return
+    new_name, old_name = json_params[0], json_params[1]
+    if _restarts_on_any_change(body, new_name, old_name):
+        return
+
+    init = methods.get("initialize")
+    init_body = init[1] if init else ""
+    init_fields = set()
+    if init:
+        init_fields = _fields_via(methods, "initialize", set(_json_param_names(init[0])), set())
+    never_restart = re.fullmatch(r"returnfalse;", _compact(body)) is not None
+    restart_fields = set() if never_restart else _path_fields(body, {new_name, old_name})
+
+    update = methods.get("onParametersUpdated")
+    update_fields = set()
+    passes_old = False
+    if update:
+        update_params, update_body = update
+        update_json = _json_param_names(update_params)
+        update_new = update_json[0] if update_json else ""
+        update_old = update_json[1] if len(update_json) > 1 else ""
+        if update_new:
+            update_fields = _fields_via(methods, "onParametersUpdated", {update_new}, set())
+        for callee, arg in _single_arg_calls(update_body):
+            if update_old and arg == update_old and callee in methods:
+                passes_old = True
+        if passes_old:
+            err(loc, "onParametersUpdated 把旧参数传给了更新逻辑，运行中的流程不会改用新参数；"
+                     "应传入 newParameters")
+
+    stale = sorted(init_fields - restart_fields - update_fields)
+    if stale:
+        where = ("也未实现 onParametersUpdated()" if update is None
+                 else "onParametersUpdated() 也没有用新参数重新赋值")
+        err(loc, "参数 %s 在 initialize() 中读取，变化时 isRestartRequired() 不会重启节点，%s。"
+                 "保存后运行中的流程仍使用旧配置。这些字段要么在变化时返回 true，"
+                 "要么在 onParametersUpdated() 中重新 apply（传入 newParameters）"
+            % (", ".join(stale), where))
+
+    life = _lifecycle_fields(init_body)
+    missed = sorted(life - restart_fields)
+    if missed:
+        err(loc, "参数 %s 用于注册路由、定时任务或创建连接，变化时 isRestartRequired() 必须返回 true，"
+                 "否则流程不会按新参数重建" % ", ".join(missed))
+    elif never_restart and RESOURCE_CALL.search(init_body):
+        err(loc, "节点注册了路由、定时任务或连接，但 isRestartRequired() 恒为 false，"
+                 "参数变化不会重建这些资源，运行中的流程不会更新")
+
+
 def check_node_code(jf: JavaFile, is_trigger: bool) -> None:
     code, loc = jf.code, jf.rel
 
@@ -617,6 +808,8 @@ def check_node_code(jf: JavaFile, is_trigger: bool) -> None:
         if routed and not re.search(r"put\(\s*\"output\"", code):
             warn(loc, "非触发器节点应把业务结果收敛到 payload 的 output 字段"
                       "（下游用 {{ msg.output.x }} 引用）")
+
+    check_parameter_refresh(jf)
 
 
 def check_get_credentials(jf: JavaFile, credential_types: set) -> None:

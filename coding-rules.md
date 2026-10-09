@@ -1,6 +1,6 @@
 # Bundle 编码硬性规范
 
-六条通用规范 + 触发器三条 + 命名一致性表。表单与 API 细节见 `reference/`。
+七条通用规范 + 触发器三条 + 命名一致性表。表单与 API 细节见 `reference/`。
 
 ## 目录
 
@@ -10,6 +10,7 @@
 - [规范 4：普通节点输出放 output](#规范-4普通节点输出放-output触发器放根级)
 - [规范 5：凭证标识 PascalCase](#规范-5凭证标识-pascalcase三处逐字一致)
 - [规范 6：已知错误用 FlowNodeException](#规范-6已知错误用-flownodeexception)
+- [规范 7：参数变更必须重启或热更新](#规范-7参数变更必须重启或热更新)
 - [触发器节点三条额外规范](#触发器节点三条额外规范)
 - [命名一致性](#命名一致性最常见的低级错误)
 
@@ -148,6 +149,37 @@ context.getCredentials("MysqlCredential");      // ❌ 凭证类型标识
 throw new FlowNodeException("API_ERROR_" + code, "API 调用失败: " + apiMsg)
     .with("code", code).with("message", apiMsg);
 ```
+
+## 规范 7：参数变更必须重启或热更新
+
+参数保存后，正在运行的节点必须用上新值。框架的规则是：
+
+- `isRestartRequired()` 返回 `true`：`destroy()` 后再 `initialize()`，适合路由、cron、连接、连接池、凭证
+- 返回 `false`：只调用 `onParametersUpdated()`。这里必须用 **newParameters** 重新赋值，否则流程仍跑旧配置
+
+未覆写 `isRestartRequired()` 时，任意参数变化都会重启，节点会在 `initialize()` 里读到新值。
+一旦改成只比较部分字段，其余在 `initialize()` 里读过的字段都要在 `onParametersUpdated()` 中重新生效。
+两边应共用 `applyParameters()`：
+
+```java
+@Override
+public void initialize(Context context, JsonValue parameters) {
+    this.client = buildClient(parameters.path("timeout").asInt(30));
+    applyParameters(parameters);
+}
+
+@Override
+public boolean isRestartRequired(JsonValue newParameters, JsonValue oldParameters) {
+    return newParameters.path("timeout").asInt(30) != oldParameters.path("timeout").asInt(30);
+}
+
+@Override
+public void onParametersUpdated(Context context, JsonValue newParameters, JsonValue oldParameters) {
+    applyParameters(newParameters);
+}
+```
+
+不要 `return false` 却留空 `onParametersUpdated()`，也不要把 `oldParameters` 传进 `applyParameters()`。
 
 ## 触发器节点三条额外规范
 

@@ -33,9 +33,9 @@
 - [ ] `destroy()` 中释放所有资源，且实现幂等
 - [ ] 未使用已移除的旧事件 API：`sendRequestEvent` / `sendResponseEvent`、
       `RequestEvent` / `ResponseEvent`、`onRequestEvent` / `onResponseEvent`
-- [ ] 🔍 无需重启的参数变更实现了 `onParametersUpdated()`，`isRestartRequired()` 做了细粒度判断
-- [ ] 🔍 影响生命周期资源（路由、cron、连接池、凭证）的参数变更让 `isRestartRequired()`
-      返回 `true`
+- [ ] 不触发重启的参数在 `onParametersUpdated()` 中用 **newParameters** 重新赋值
+      （与 `initialize()` 共用 `applyParameters()`）；未覆写 `isRestartRequired()` 时任意变化都会重启
+- [ ] 路由、cron、连接、连接池所用参数在变化时让 `isRestartRequired()` 返回 `true`
 - [ ] 🔍 `onFailure` 中日志分级：`FlowNodeException` 用 `warn`，未知异常用 `error` 并保留堆栈
 
 ## 触发器节点

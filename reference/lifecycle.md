@@ -71,8 +71,12 @@ private void applyParameters(JsonValue parameters) {
 ```
 
 **判断标准**：
-- 只影响内存字段（label、limit、表达式模板）→ 热更新，返回 `false`
+- 只影响内存字段（label、limit、表达式模板）→ 热更新，返回 `false`，并在 `onParametersUpdated()` 里用新参数重新赋值
 - 影响生命周期资源（Webhook 路由、cron、监听 topic、连接地址、连接池、凭证）→ 返回 `true`
+
+未覆写 `isRestartRequired()` 时，任意参数变化都会重启，`initialize()` 会读到新值。
+覆写后如果某些字段不重启，这些字段必须出现在 `onParametersUpdated()`（或它调用的 `applyParameters(newParameters)`）里。
+否则画布上的参数已经保存，正在运行的流程仍使用旧配置。校验脚本会把这种情况报为 ERROR。
 
 热更新只承诺影响后续消息，**不保证**处理中的消息立即切到新参数。需要强一致切换时返回 `true`。
 

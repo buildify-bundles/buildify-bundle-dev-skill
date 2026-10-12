@@ -18,6 +18,9 @@
 - [ ] `@FlowNodeDescription.name` 与 `bundle.json` 节点 `name` **完全一致**
       （分组型 `groups[].nodes[]`，扁平型根级 `nodes[]`）
 - [ ] 参数读取使用 `parameters.path()`，**不使用** `parameters.get()`
+- [ ] 多出口节点在类上用 `@NodeRelations` 声明关系，**未覆盖** `getRelations()`
+      （发布时只读注解，覆盖而未声明注解会被拒绝发布）；只有成功 / 失败的节点不写注解
+- [ ] `tellNext` 用到的关系名都已在 `@NodeRelations` 中声明，大小写一致
 - [ ] 同步路径在 `onMsg` 返回前完成 `tell*`，**没有**再调用 `context.complete()`
       （框架在 `onMsg` 返回时自动收尾；本次 `onMsg` 未调用 `executeBlocking`）
 - [ ] 所有异步回调（`sendAsync` / `executeBlocking` / `nodeService().execute()`）在**每条**

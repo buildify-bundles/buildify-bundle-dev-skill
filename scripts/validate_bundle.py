@@ -809,7 +809,37 @@ def check_node_code(jf: JavaFile, is_trigger: bool) -> None:
             warn(loc, "非触发器节点应把业务结果收敛到 payload 的 output 字段"
                       "（下游用 {{ msg.output.x }} 引用）")
 
+    check_relations(jf)
     check_parameter_refresh(jf)
+
+
+STANDARD_RELATION_CONSTANTS = {"SUCCESS_NAME": "Success", "FAILURE_NAME": "Failure"}
+
+
+def check_relations(jf: JavaFile) -> None:
+    code, loc = jf.code, jf.rel
+
+    if re.search(r"\bgetRelations\s*\(\s*\)\s*\{", code):
+        err(loc, "不要覆盖 getRelations()，改用类上的 @NodeRelations 声明关系："
+                 "平台发布时只读注解，覆盖该方法的软件包会被拒绝发布")
+
+    declared = set()
+    for body in re.findall(r"@NodeRelation\s*\(([^)]*)\)", code):
+        name = attr(body, "name")
+        if name is None:
+            m = re.search(r"\bname\s*=\s*Relation\.(\w+)", body)
+            name = STANDARD_RELATION_CONSTANTS.get(m.group(1)) if m else None
+        if name:
+            declared.add(name)
+    available = declared or {"Success", "Failure"}
+
+    used = set(re.findall(r"\btellNext\([^;]*?,\s*\"([^\"]+)\"\s*\)", code))
+    for name in sorted(used - available):
+        if declared:
+            warn(loc, "tellNext 使用的关系名 \"%s\" 未在 @NodeRelations 中声明（大小写敏感）" % name)
+        else:
+            warn(loc, "tellNext 使用了关系名 \"%s\"，但本类未声明 @NodeRelations；"
+                      "若未从父类继承，请在类上声明该关系" % name)
 
 
 def check_get_credentials(jf: JavaFile, credential_types: set) -> None:

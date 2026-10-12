@@ -1,11 +1,10 @@
 package {{PACKAGE}}.nodes;
 
 import cn.buildify.bundle.api.Context;
+import cn.buildify.bundle.api.Credentials;
 import cn.buildify.bundle.api.FlowNode;
 import cn.buildify.bundle.api.FlowNodeDescription;
 import cn.buildify.bundle.api.FlowNodeException;
-import cn.buildify.bundle.api.Relation;
-import cn.buildify.bundle.api.credentials.Credentials;
 import cn.buildify.bundle.api.json.JsonValue;
 import cn.buildify.bundle.api.json.JsonValueFactory;
 import cn.buildify.bundle.api.message.Message;
@@ -20,7 +19,6 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
-import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 
@@ -67,11 +65,6 @@ public class {{NODE_NAME}} implements FlowNode {
                 .put("query", parameters.path("query"))
                 .put("headers", parameters.path("headers"))
                 .put("body", parameters.path("body"));
-    }
-
-    @Override
-    public List<Relation> getRelations() {
-        return List.of(Relation.RELATIONSHIP_SUCCESS, Relation.RELATIONSHIP_FAILURE);
     }
 
     @Override

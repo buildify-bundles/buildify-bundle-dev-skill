@@ -43,8 +43,9 @@ public interface FlowNode {
     /** 凭证变更；返回 true 表示已就地生效，false 时框架回退为重启节点 */
     default boolean onCredentialsUpdated(Context context, String type, String name) { return false; }
 
-    /** 输出关系，默认 [Success, Failure] */
-    default List<Relation> getRelations() { return Relation.DEFAULT; }
+    /** 输出关系：读取类上的 @NodeRelations，未声明时为 [Success, Failure]。
+     *  不要覆盖——平台发布时只读注解，覆盖本方法的软件包会被拒绝发布 */
+    default List<Relation> getRelations() { return Relation.declaredBy(getClass()); }
 
     /** 消息级过滤：返回 false 该消息被跳过，不触发 onMsg */
     default boolean support(Message<?> message) { return true; }
@@ -312,28 +313,28 @@ Map<String, Object> map = obj.toMap();
 
 ## Relation
 
-```java
-public static final List<Relation> RELATIONSHIPS = List.of(
-    Relation.builder().name("True").label("是").description("条件成立").build(),
-    Relation.builder().name("False").label("否").description("条件不成立").build(),
-    Relation.RELATIONSHIP_FAILURE);
+只有成功 / 失败两个出口的节点什么都不用写。多出口节点在类上用 `@NodeRelations` 声明：
 
-// 或用 RelationBuilder
-public static final List<Relation> RELATIONSHIPS = RelationBuilder.create()
-    .add("True", "是", "条件成立")
-    .add("False", "否", "条件不成立")
-    .addFailure()      // 另有 addSuccess()、addDefault()
-    .build();
+```java
+@FlowNodeDescription(name = "if", propertiesFile = "properties/if.json")
+@NodeRelations({
+    @NodeRelation(name = "True", label = "是", description = "条件成立"),
+    @NodeRelation(name = "False", label = "否", description = "条件不成立"),
+    @NodeRelation(name = Relation.FAILURE_NAME)   // 标准关系可省略 label / description
+})
+public class IfNode implements FlowNode { ... }
 ```
+
+- **不要覆盖 `getRelations()`**：平台发布软件包时只读字节码里的注解，不执行节点代码；覆盖该方法而未声明注解的软件包会被拒绝发布。
+- `name` 与 `context.tellNext(message, name)` 的关系名一致，大小写敏感。
+- `name` 为 `Success` / `Failure` 且未填 `label`、`description` 时，自动补齐标准显示名称与描述。
+- 注解带 `@Inherited`，可标注在抽象父类上由子类继承。
 
 | 常量 | 值 |
 |---|---|
-| `Relation.RELATIONSHIP_SUCCESS` | `name = "Success"` |
-| `Relation.RELATIONSHIP_FAILURE` | `name = "Failure"` |
 | `Relation.SUCCESS_NAME` / `FAILURE_NAME` | `"Success"` / `"Failure"` |
-| `Relation.DEFAULT` | `[Success, Failure]` |
-
-自定义关系建议定义为 `static final` 常量，所有实例共享。
+| `Relation.RELATIONSHIP_SUCCESS` / `RELATIONSHIP_FAILURE` | 标准成功 / 失败关系 |
+| `Relation.DEFAULT` | `[Success, Failure]`，未声明注解时使用 |
 
 ## MethodExecutor
 

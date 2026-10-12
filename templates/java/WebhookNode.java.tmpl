@@ -4,7 +4,6 @@ import cn.buildify.bundle.api.Context;
 import cn.buildify.bundle.api.FlowNode;
 import cn.buildify.bundle.api.FlowNodeDescription;
 import cn.buildify.bundle.api.FlowNodeException;
-import cn.buildify.bundle.api.Relation;
 import cn.buildify.bundle.api.http.HttpMethod;
 import cn.buildify.bundle.api.http.Route;
 import cn.buildify.bundle.api.http.RoutingContext;
@@ -67,7 +66,7 @@ public class {{NODE_NAME}} implements FlowNode {
             Message<JsonValue> msg = requestId == null
                     ? context.createTriggerMessage(payload)
                     : context.createTriggerMessage(payload, requestId);
-            context.tellNext(msg, Relation.SUCCESS_NAME);
+            context.tellSuccess(msg);
 
             rc.response().statusCode(200)
                     .contentType("application/json")

@@ -105,14 +105,23 @@ context.tellSuccess(MessageBuilder.withPayload(out)
 
 触发器是流程入口，**禁止**再包一层 `output`，业务字段直接放根级，下游用 `{{ msg.xxx }}`：
 
+根级必须带上本次触发的来源字段（在 `initialize()` 取出节点与 Worker，每次触发再生成 `eventId`）：
+
 ```java
 // ✅ 触发器
+String eventId = UUID.randomUUID().toString();
 JsonValue payload = JsonValueFactory.objectNode()
+    .put("triggerNodeId", triggerNodeId)   // context.getWorkflowNodeId()
+    .put("eventId", eventId)               // 本次触发 ID，同时作为追踪 ID
+    .put("workerId", workerId)             // context.getWorkerId()，不适用时 null
     .put("cron", cronExpr).put("timestamp", System.currentTimeMillis());
+context.tellSuccess(context.createTriggerMessage(payload, eventId));
 
 // ❌ 触发器不要包 output
 JsonValue bad = JsonValueFactory.objectNode().put("output", payload);
 ```
+
+`eventId` 与消息头 `__correlationId` 取值相同。宿主不支持多 Worker 时 `workerId` 为 `null`。
 
 文档与表单说明中统一用 `msg` 表示消息 payload，**不要**用 `$json`。
 
@@ -185,8 +194,9 @@ public void onParametersUpdated(Context context, JsonValue newParameters, JsonVa
 
 1. `initialize()` 中用 `context.isTest()` 区分：测试模式立即触发一次，生产模式注册定时任务
    或监听器（Webhook 等被动触发器两种模式都要注册路由）。
-2. 每条消息必须用 `context.createTriggerMessage(payload)` 创建；透传外部追踪 ID 用
-   `createTriggerMessage(payload, externalTraceId)`。
+2. 每条消息必须用 `context.createTriggerMessage(payload, eventId)` 创建。payload 根级写
+   `triggerNodeId`（`getWorkflowNodeId()`）、`eventId`（本次触发 UUID；有外部追踪 ID 时用它）、
+   `workerId`（`getWorkerId()`，不适用时 `null`）。`eventId` 就是第二个参数，与 `__correlationId` 相同。
 3. `destroy()` 中取消定时任务、注销 HTTP 路由。注解必须同时设 `isTrigger=true, hasInput=false`。
 
 ## 命名一致性（最常见的低级错误）

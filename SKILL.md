@@ -112,10 +112,11 @@ Maven 依赖：`cn.buildify:buildify-bundle-api`（版本见 `templates/project/
 1. 参数读 `path()`，不用 `get()`
 2. 同步路径在 `onMsg` 返回前 `tell*` 即可，框架自动 `complete`；异步路径必须对入站 `message` 调用 `context.complete()`
 3. 可传值字段默认 `expression: true`（访问凭证除外）；代码侧 `dynamicParameters` + `resolveExpressions`
-4. 普通节点输出放 `output`；触发器 payload 放根级
+4. 普通节点输出放 `output`；触发器 payload 放根级，并带 `triggerNodeId`、`eventId`、`workerId`
 5. 凭证类型 PascalCase；`credentialsType` 三处一致；`getCredentials` 用表单字段 `name`
 6. 已知错误用 `FlowNodeException`（含 `initialize` 参数校验）；触发器遵守
-   `isTest()` / `createTriggerMessage` / `destroy()`
+   `isTest()` / `createTriggerMessage(payload, eventId)` / `destroy()`。`eventId` 同时写入 payload，
+   `triggerNodeId` 取 `getWorkflowNodeId()`，`workerId` 取 `getWorkerId()`
 7. 节点 `icon` 默认写 `"default.svg"`，需要自定义图标时再改文件名。不要在工程里生成 SVG，
    图标文件由平台上传管理，不打进 JAR、不放在 `src/main/resources`
 8. 需要人逐项填写的数组用 `FixedCollection`（可增删），不要用 `JsonEditor` 手写 JSON 数组

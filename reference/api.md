@@ -171,11 +171,19 @@ ScheduledFuture<?> retry = context.getExecutor()
 ### 触发器消息
 
 ```java
-Message<JsonValue> msg = context.createTriggerMessage(payload);
-Message<JsonValue> msg = context.createTriggerMessage(payload, externalTraceId);
+String eventId = UUID.randomUUID().toString(); // 有外部追踪 ID 时用外部 ID
+JsonValue payload = JsonValueFactory.objectNode()
+    .put("triggerNodeId", context.getWorkflowNodeId()) // 例：n-u1d6v6we
+    .put("eventId", eventId)                           // 例：88724f81-e1a7-47cf-9105-0bffd00a5e98
+    .put("workerId", context.getWorkerId());           // 例：wkr-dk7s8awx；不适用时 null
+Message<JsonValue> msg = context.createTriggerMessage(payload, eventId);
 ```
 
-自动注入（`setHeaderIfAbsent` 语义）：`CORRELATION_ID`（单参数重载自动生成 UUID）、
+`triggerNodeId`、`workerId` 在 `initialize()` 取出后复用；`eventId` 每次触发新生成。
+第二个参数与 payload 里的 `eventId` 必须是同一个值，这样消息头 `__correlationId` 与根级字段一致。
+单参数重载会自己生成 UUID，触发器不要用它，否则根级 `eventId` 和消息头会对不上。
+
+自动注入（`setHeaderIfAbsent` 语义）：`CORRELATION_ID`（等于传入的 `eventId`）、
 `BEGIN_RUN_NANOS`（纳秒时刻，不受时钟回拨影响）。
 
 ### 响应时间统计
@@ -226,8 +234,8 @@ public interface AsyncResult<T> {
 ## Message 与 MessageBuilder
 
 ```java
-// 触发器节点
-Message<JsonValue> msg = context.createTriggerMessage(payload);
+// 触发器节点：eventId 同时写入 payload 和追踪 ID
+Message<JsonValue> msg = context.createTriggerMessage(payload, eventId);
 
 // 普通节点：透传上游 headers（保留 CORRELATION_ID）
 Message<JsonValue> msg = MessageBuilder.withPayload(newPayload)
@@ -249,7 +257,7 @@ Long   ts     = message.getHeaders().get(MessageHeaders.TIMESTAMP, Long.class);
 |---|---|---|
 | `ID` | `__id` | 框架自动，消息 UUID |
 | `TIMESTAMP` | `__timestamp` | 框架自动，创建毫秒时间戳 |
-| `CORRELATION_ID` | `__correlationId` | `createTriggerMessage` 注入；非触发器靠 `copyHeaders` 传递 |
+| `CORRELATION_ID` | `__correlationId` | 触发器传入的 `eventId`；非触发器靠 `copyHeaders` 传递 |
 | `SOURCE_NODE_ID` | `__sourceNodeId` | 框架自动，源节点 ID |
 | `CONTENT_TYPE` | `__contentType` | 产生消息的节点自行设置，可配合 `support()` 过滤 |
 | `BEGIN_TIME` | `__beginTime` | **不由** `createTriggerMessage` 注入，需要时自行设置 |

@@ -14,6 +14,7 @@ import cn.buildify.bundle.api.status.NodeStatus;
 import lombok.extern.slf4j.Slf4j;
 
 import java.util.Set;
+import java.util.UUID;
 
 @Slf4j
 @FlowNodeDescription(
@@ -24,9 +25,13 @@ import java.util.Set;
 public class {{NODE_NAME}} implements FlowNode {
 
     private Route route;
+    private String triggerNodeId;
+    private String workerId;
 
     @Override
     public void initialize(Context context, JsonValue parameters) {
+        this.triggerNodeId = context.getWorkflowNodeId();
+        this.workerId = context.getWorkerId();
         String path = parameters.path("path").asText(null);
         if (path == null || path.isBlank()) {
             throw new FlowNodeException("MISSING_PATH", "path 不能为空");
@@ -56,16 +61,20 @@ public class {{NODE_NAME}} implements FlowNode {
         try {
             String body = rc.request().body();
             String requestId = rc.request().getHeader("X-Request-Id");
+            // 有外部追踪 ID 就用它，否则每次请求生成一个。与消息头 __correlationId 相同。
+            String eventId = requestId == null || requestId.isBlank()
+                    ? UUID.randomUUID().toString()
+                    : requestId;
 
             // 触发器 payload 直接放根级业务字段，禁止再包一层 output
             JsonValue payload = JsonValueFactory.objectNode()
+                    .put("triggerNodeId", triggerNodeId)
+                    .put("eventId", eventId)
+                    .put("workerId", workerId)
                     .put("body", parseBody(body))
                     .put("clientIp", rc.getClientIP());
 
-            // 透传外部追踪 ID；requestId 为 null 时框架自动生成 UUID
-            Message<JsonValue> msg = requestId == null
-                    ? context.createTriggerMessage(payload)
-                    : context.createTriggerMessage(payload, requestId);
+            Message<JsonValue> msg = context.createTriggerMessage(payload, eventId);
             context.tellSuccess(msg);
 
             rc.response().statusCode(200)

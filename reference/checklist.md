@@ -25,7 +25,7 @@
       （框架在 `onMsg` 返回时自动收尾；本次 `onMsg` 未调用 `executeBlocking`）
 - [ ] 所有异步回调（`sendAsync` / `executeBlocking` / `nodeService().execute()`）在**每条**
       结束路径上都对**入站** `message` 调用了 `complete`；推荐用 `onComplete` 或 `finally` 统一收尾
-- [ ] 触发器只 `tellSuccess(createTriggerMessage(...))`，没有对这条新消息 `complete`
+- [ ] 触发器只 `tellSuccess(createTriggerMessage(payload, eventId))`，没有对这条新消息 `complete`
 - [ ] 含表达式的参数在 `initialize()` 存入 `dynamicParameters`，`onMsg()` 用
       `resolveExpressions` 解析
 - [ ] `JsonExpressionInput` 字段直接 `parameters.path(...)` 填入 `dynamicParameters`，
@@ -48,7 +48,9 @@
 - [ ] 注解同时设置 `isTrigger = true, hasInput = false`
 - [ ] `initialize()` 中区分了 `context.isTest()` 测试/生产模式
       （Webhook 等被动触发器两种模式都要注册路由，不强制分支）
-- [ ] 发出的**每条消息**（成功、失败、测试）都通过 `context.createTriggerMessage(payload)` 创建
+- [ ] 发出的**每条消息**（成功、失败、测试）都通过 `context.createTriggerMessage(payload, eventId)` 创建
+- [ ] 触发 payload 根级包含 `triggerNodeId`、`eventId`、`workerId`；`eventId` 与
+      `createTriggerMessage` 的第二个参数相同（即消息头 `__correlationId`）
 - [ ] 触发 payload **未**再包一层 `output`，业务字段直接在根级
 - [ ] `destroy()` 中取消了定时任务 / 注销了 HTTP 路由
 

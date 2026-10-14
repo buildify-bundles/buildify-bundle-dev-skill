@@ -794,8 +794,17 @@ def check_node_code(jf: JavaFile, is_trigger: bool) -> None:
 
     if is_trigger:
         if "createTriggerMessage(" not in code:
-            err(loc, "触发器节点必须用 context.createTriggerMessage(payload) 创建消息，"
+            err(loc, "触发器节点必须用 context.createTriggerMessage(payload, eventId) 创建消息，"
                      "否则遗漏 CORRELATION_ID / BEGIN_RUN_NANOS")
+        missing_fields = [name for name in ("triggerNodeId", "eventId", "workerId")
+                          if '"%s"' % name not in code and "'%s'" % name not in code]
+        if missing_fields:
+            err(loc, "触发器 payload 根级必须包含 %s："
+                     "triggerNodeId 取 context.getWorkflowNodeId()，"
+                     "eventId 为本次触发 ID 并作为 createTriggerMessage 的第二个参数"
+                     "（与消息头 __correlationId 相同），"
+                     "workerId 取 context.getWorkerId()（不适用时为 null）"
+                     % "、".join(missing_fields))
         if re.search(r"put\(\s*\"output\"", code):
             err(loc, "触发器 payload 禁止再包一层 output，业务字段直接放根级"
                      "（下游用 {{ msg.<字段> }} 引用）")

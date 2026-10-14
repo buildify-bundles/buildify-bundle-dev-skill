@@ -9,6 +9,7 @@ import cn.buildify.bundle.api.message.Message;
 import cn.buildify.bundle.api.status.NodeStatus;
 import lombok.extern.slf4j.Slf4j;
 
+import java.util.UUID;
 import java.util.concurrent.ScheduledFuture;
 
 @Slf4j
@@ -20,9 +21,13 @@ import java.util.concurrent.ScheduledFuture;
 public class {{NODE_NAME}} implements FlowNode {
 
     private ScheduledFuture<?> scheduledFuture;
+    private String triggerNodeId;
+    private String workerId;
 
     @Override
     public void initialize(Context context, JsonValue parameters) {
+        this.triggerNodeId = context.getWorkflowNodeId();
+        this.workerId = context.getWorkerId();
         String cron = parameters.path("cron").asText("0 */5 * * * ?");
         String timezone = parameters.path("timezone").asText("Asia/Shanghai");
 
@@ -50,12 +55,16 @@ public class {{NODE_NAME}} implements FlowNode {
 
     private void triggerOnce(Context context) {
         try {
-            // 触发器 payload 直接放根级业务字段，禁止再包一层 output
+            // 触发器 payload 直接放根级业务字段，禁止再包一层 output。
+            // eventId 同时作为追踪 ID，与消息头 __correlationId 相同。
+            String eventId = UUID.randomUUID().toString();
             JsonValue payload = JsonValueFactory.objectNode()
+                    .put("triggerNodeId", triggerNodeId)
+                    .put("eventId", eventId)
+                    .put("workerId", workerId)
                     .put("triggeredAt", System.currentTimeMillis());
 
-            // 触发器发出的每条消息都必须用 createTriggerMessage 创建
-            context.tellSuccess(context.createTriggerMessage(payload));
+            context.tellSuccess(context.createTriggerMessage(payload, eventId));
         } catch (Exception e) {
             log.error("[{{NODE_NAME}}] 触发失败", e);
             context.setStatus(NodeStatus.builder().color("red").text("触发失败").build());

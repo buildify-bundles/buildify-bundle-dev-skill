@@ -759,13 +759,28 @@ def check_parameter_refresh(jf: JavaFile) -> None:
                  "参数变化不会重建这些资源，运行中的流程不会更新")
 
 
+def _json_get_calls(code: str) -> list:
+    """找出对 JsonValue 变量（参数、字段、局部变量）或 path() 链调用 get("key") 的位置。"""
+    names = set(re.findall(r"\bJsonValue\s+([A-Za-z_]\w*)\b", code)) | {"parameters"}
+    receivers = "|".join(re.escape(n) for n in sorted(names))
+    hits = re.findall(r"\b(%s)\s*\.\s*get\(\s*\"" % receivers, code)
+    if re.search(r"\.path\([^()]*\)\s*\.\s*get\(\s*\"", code):
+        hits.append("path(...)")
+    return sorted(set(hits))
+
+
 def check_node_code(jf: JavaFile, is_trigger: bool) -> None:
     code, loc = jf.code, jf.rel
 
-    if re.search(r"\bparameters\.get\(", code):
-        err(loc, "参数读取必须用 parameters.path()，get() 在字段缺失时返回 null 会 NPE")
+    json_gets = _json_get_calls(code)
+    if json_gets:
+        err(loc, "JsonValue 读取必须用 path()，get() 在字段缺失时返回 null 会 NPE："
+                 + ", ".join(f"{n}.get(...)" for n in json_gets))
     if re.search(r"\bnew\s+(?:RuntimeException|IllegalArgumentException)\(", code):
         warn(loc, "已知错误应使用 FlowNodeException 结构化，不要抛出 RuntimeException / IllegalArgumentException")
+    if re.search(r"\bObjects\s*\.\s*requireNonNull\(", code):
+        warn(loc, "Objects.requireNonNull 失败时抛 NullPointerException，"
+                  "参数校验请改用 FlowNodeException（onMsg 中走 tellFailure）")
 
     routed = re.search(r"\btell(?:Success|Failure|Next)\(", code)
     has_async = re.search(r"\bexecuteBlocking\(|\bsendAsync\(|\bwhenComplete\(|\bthenAccept\(", code)
@@ -796,6 +811,9 @@ def check_node_code(jf: JavaFile, is_trigger: bool) -> None:
         if "createTriggerMessage(" not in code:
             err(loc, "触发器节点必须用 context.createTriggerMessage(payload, eventId) 创建消息，"
                      "否则遗漏 CORRELATION_ID / BEGIN_RUN_NANOS")
+        elif re.search(r"createTriggerMessage\(\s*[^,()]*(?:\([^()]*\)[^,()]*)*\)", code):
+            err(loc, "createTriggerMessage 必须传两个参数 (payload, eventId)，"
+                     "单参数写法生成的 __correlationId 与 payload.eventId 不一致")
         missing_fields = [name for name in ("triggerNodeId", "eventId", "workerId")
                           if '"%s"' % name not in code and "'%s'" % name not in code]
         if missing_fields:

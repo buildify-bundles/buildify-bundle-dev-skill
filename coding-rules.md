@@ -16,7 +16,9 @@
 
 ## 规范 1：读参数用 `path()`，绝不用 `get()`
 
-`path()` 字段缺失时返回 `MissingNode`；`get()` 返回 `null`，会 NPE。
+`path()` 字段缺失时返回 `MissingNode`；`get()` 返回 `null`，会 NPE。对所有 `JsonValue`
+（`parameters`、`newParameters`、`payload`、`path(...)` 链）都一样。必填项为空时抛 / 回
+`FlowNodeException`，不要用 `Objects.requireNonNull`。
 
 ```java
 String url   = parameters.path("url").asText(null);

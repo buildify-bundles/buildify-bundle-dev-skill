@@ -109,7 +109,7 @@ Maven 依赖：`cn.buildify:buildify-bundle-api`（版本见 `templates/project/
 
 完整示例见 [coding-rules.md](coding-rules.md)：
 
-1. 参数读 `path()`，不用 `get()`
+1. `JsonValue` 读字段用 `path()`，不用 `get()`；也不要用 `Objects.requireNonNull` 做参数校验
 2. 同步路径在 `onMsg` 返回前 `tell*` 即可，框架自动 `complete`；异步路径必须对入站 `message` 调用 `context.complete()`
 3. 可传值字段默认 `expression: true`（访问凭证除外）；代码侧 `dynamicParameters` + `resolveExpressions`
 4. 普通节点输出放 `output`；触发器 payload 放根级，并带 `triggerNodeId`、`eventId`、`workerId`

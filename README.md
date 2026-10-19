@@ -46,4 +46,16 @@ coding-rules.md          # 节点编码规范
 scripts/                 # scaffold_bundle.py、validate_bundle.py
 templates/               # 工程、Java、表单模板
 reference/               # 表单、API、生命周期、发布
+tests/                   # 脚本回归测试
 ```
+
+## 维护本技能
+
+改了 `scripts/` 或 `templates/` 后跑回归测试：脚手架产物须 0 ERROR / 0 WARNING，故意写错的变体须被校验器拦下。
+
+```bash
+python3 -m unittest discover -s tests -v
+RUN_MAVEN=1 python3 -m unittest discover -s tests -v   # 额外编译脚手架产物，需 JDK 21 与 Maven
+```
+
+新增校验规则时，在 `tests/test_scripts.py` 的 `MUTATIONS` 或 `WARNING_MUTATIONS` 里补一条对应的错误写法。

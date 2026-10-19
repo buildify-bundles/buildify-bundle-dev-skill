@@ -16,7 +16,6 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
-import java.util.Objects;
 
 @Slf4j
 @FlowNodeDescription(name = "{{NODE_NAME}}", propertiesFile = "properties/{{NODE_NAME}}.json")
@@ -28,7 +27,7 @@ public class {{NODE_NAME}} implements FlowNode {
 
     @Override
     public void initialize(Context context, JsonValue parameters) {
-        if (parameters.path("url").isMissingNode()) {
+        if (parameters.path("url").asText("").isBlank()) {
             throw new FlowNodeException("MISSING_URL", "url 不能为空");
         }
         this.timeout = parameters.path("timeout").asInt(30);
@@ -68,7 +67,11 @@ public class {{NODE_NAME}} implements FlowNode {
         JsonValue payload = getPayload(message, JsonValue.class);
         JsonValue parameters = context.resolveExpressions(dynamicParameters, payload);
 
-        String url = Objects.requireNonNull(parameters.path("url").asText(null), "url is null");
+        String url = parameters.path("url").asText("").trim();
+        if (url.isEmpty()) {
+            context.tellFailure(message, new FlowNodeException("MISSING_URL", "url 求值结果为空"));
+            return;
+        }
         String method = parameters.path("method").asText("GET");
 
         HttpRequest request;

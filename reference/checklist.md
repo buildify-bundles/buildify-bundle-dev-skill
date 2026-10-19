@@ -17,7 +17,7 @@
 - [ ] 每个 `FlowNode` 标注了 `@FlowNodeDescription(name = "...")`
 - [ ] `@FlowNodeDescription.name` 与 `bundle.json` 节点 `name` **完全一致**
       （分组型 `groups[].nodes[]`，扁平型根级 `nodes[]`）
-- [ ] 参数读取使用 `parameters.path()`，**不使用** `parameters.get()`
+- [ ] `JsonValue` 读字段使用 `path()`，**不使用** `get()`；参数校验不用 `Objects.requireNonNull`
 - [ ] 多出口节点在类上用 `@NodeRelations` 声明关系，**未覆盖** `getRelations()`
       （发布时只读注解，覆盖而未声明注解会被拒绝发布）；只有成功 / 失败的节点不写注解
 - [ ] `tellNext` 用到的关系名都已在 `@NodeRelations` 中声明，大小写一致

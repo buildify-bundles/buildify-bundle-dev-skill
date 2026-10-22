@@ -64,8 +64,10 @@ httpClient.sendAsync(request, BodyHandlers.ofString()).whenComplete((resp, err) 
 ## 规范 3：`dynamicParameters` + `resolveExpressions`
 
 节点表单里，除访问凭证（`CredentialSelect`）外，可传值字段默认
-`"expression": true` 与 `"droppable": true`，这样可以直接传 `={{ msg.xxx }}`。
-访问凭证和 `credentials/*.json` 不要开表达式。
+`"expression": true` 与 `"droppable": true`。`expression` 表示这个控件能否在固定值和
+`={{ msg.xxx }}` 之间切换，`CodeEditor` / `SqlEditor` / `JsonEditor` 也一样。
+`CodeEditor` 的 `typeOptions.enableExpression` 是编辑器自己的属性，决定内容是否带 `=` 前缀存储，
+不能用来代替顶层 `expression`。访问凭证和 `credentials/*.json` 不要开 `expression`。
 
 需要人逐项填写的数组（请求头、标签、收件人等）用 `FixedCollection`，值是 JSON 数组，
 用 `parameters.path("headers")` 遍历元素。不要用 `JsonEditor` 让用户手写 JSON 数组。

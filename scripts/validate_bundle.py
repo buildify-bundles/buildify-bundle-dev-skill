@@ -40,17 +40,17 @@ SERVICE_NAME = re.compile(r"^[A-Za-z0-9._-]+$")
 # 内置的表单驱动方法名，无需对应 MethodExecutor
 BUILTIN_METHODS = {"test"}
 
-# 编辑器类组件：内置变量语法，不接受顶层 expression
-EDITOR_COMPONENTS = {"CodeEditor", "SqlEditor", "JsonEditor", "JsonExpressionInput"}
-
-# 节点表单里默认可切到表达式、供 Agent 传值的控件。
-# 访问凭证、编辑器、纯展示/操作，以及本身就是表达式控件的不在此列。
+# 节点表单里默认可切换到表达式模式的控件。
+# expression 是字段级开关（能否在固定值与 ={{ msg.xxx }} 之间切换）。
+# CodeEditor 的 typeOptions.enableExpression 是组件自身属性（编辑内容是否按表达式存储），两者独立。
+# 访问凭证、纯展示/操作，以及本身就只工作在表达式模式的控件不在此列。
 EXPRESSION_DEFAULT_COMPONENTS = {
     "Input", "Password", "InputNumber", "Select", "Segmented",
     "RadioGroup", "RadioButtonGroup", "CheckboxGroup",
     "Switch", "Slider",
     "DatePicker", "DateTimePicker", "TimePicker",
     "Cascader", "ColorPicker",
+    "CodeEditor", "SqlEditor", "JsonEditor",
 }
 
 # 不产生业务数据的纯 UI 组件，不应出现在 defaultValue 中
@@ -252,9 +252,10 @@ def walk_fields(fields, loc: str, path_prefix: str, ctx: dict) -> None:
                     warn(loc, f"{where} required 应写在字段顶层，不要放进 rules")
 
         # --- 表达式
-        if component in EDITOR_COMPONENTS and field.get("expression"):
-            err(loc, f"{where} {component} 内置变量语法，顶层 expression 无效，"
-                     "请改用 typeOptions.enableExpression")
+        # expression：字段能否切换到表达式模式。enableExpression：仅 CodeEditor 的组件属性。
+        if component != "CodeEditor" and "enableExpression" in type_options:
+            warn(loc, f"{where} enableExpression 是 CodeEditor 的组件属性，{component} 没有该属性；"
+                      "能否切换到表达式模式由顶层 expression 控制")
         if component == "CredentialSelect" and field.get("expression"):
             err(loc, f"{where} 访问凭证不要开启 expression：选的是已保存的凭证实例，"
                      "不按消息求值")
@@ -267,7 +268,8 @@ def walk_fields(fields, loc: str, path_prefix: str, ctx: dict) -> None:
             lang = type_options.get("lang", "text")
             if lang == "text" and "enableExpression" not in type_options:
                 warn(loc, f"{where} CodeEditor(lang=text) 未显式设置 enableExpression；"
-                          "存证书/纯文本时必须设为 false，否则存储值会带 '=' 前缀")
+                          "这是编辑器自身属性，存证书/纯文本时必须设为 false，否则存储值会带 '=' 前缀。"
+                          "顶层 expression 只控制能否切换到表达式模式，不能代替它")
 
         # --- 条件显示
         display = field.get("displayOptions")

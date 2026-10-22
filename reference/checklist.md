@@ -86,11 +86,11 @@
 - [ ] 凡 `Select` 用了 `loadOptions`，同层 `typeOptions` 配了 `allow-create` 与 `clearable`
       （按需 `filterable`），避免远程不可达时无法配置
 - [ ] `displayOptions` 只引用同级兄弟字段，条件值为数组
-- [ ] `CodeEditor` 存证书 / 纯文本时设了 `"enableExpression": false`
+- [ ] `CodeEditor` 存证书 / 纯文本时设了 `"enableExpression": false`（组件自身属性，与顶层 `expression` 无关）
 - [ ] 2～5 个互斥短文案用 `Segmented`；选项多、要搜索或远程加载时用 `Select`（`Segmented` 不支持 `loadOptions`）
 - [ ] 节点 / 触发器 / Webhook 表单中，可传值字段设了 `expression: true` 与 `droppable: true`
 - [ ] `CredentialSelect`（访问凭证）未设 `expression`；`credentials/*.json` 也未开表达式
-- [ ] 未给编辑器类组件（`CodeEditor` / `SqlEditor` / `JsonEditor`）设顶层 `expression: true`
+- [ ] 可传值的 `CodeEditor` / `SqlEditor` / `JsonEditor` 同样设了顶层 `expression` 与 `droppable`（能否切换）；未把 `enableExpression` 写到其它组件上
 - [ ] 需要人工逐项填写的数组使用 `FixedCollection`（可增删），未用 `JsonEditor` 手写 JSON 数组
 - [ ] `FixedCollection` 的 `defaultValue` 包含 `options` 中所有子字段
 - [ ] 集合类子字段 `name` 不含父级路径前缀

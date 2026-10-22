@@ -211,6 +211,54 @@ class ValidatorMutationTest(ScriptTestCase):
         result = self.validate(self.full, "--strict")
         self.assertNotIn("JsonValue 读取必须用 path()", result.stdout)
 
+    def test_editor_expression_switch_is_not_enable_expression(self):
+        project = self.copy_full()
+        path = project / RES / "properties" / "MyNode.json"
+        text = path.read_text(encoding="utf-8")
+        marker = '    {\n      "name": "url"'
+        self.assertIn(marker, text)
+        fields = """    {
+      "name": "script",
+      "label": "脚本",
+      "uiComponent": "CodeEditor",
+      "expression": true,
+      "droppable": true,
+      "typeOptions": { "lang": "javascript", "enableExpression": true }
+    },
+    {
+      "name": "certificate",
+      "label": "证书",
+      "uiComponent": "CodeEditor",
+      "expression": true,
+      "droppable": true,
+      "typeOptions": { "lang": "text" }
+    },
+    {
+      "name": "note",
+      "label": "备注",
+      "uiComponent": "CodeEditor",
+      "typeOptions": { "lang": "javascript" }
+    },
+    {
+      "name": "query",
+      "label": "查询",
+      "uiComponent": "SqlEditor",
+      "expression": true,
+      "droppable": true,
+      "typeOptions": { "enableExpression": true }
+    },
+"""
+        path.write_text(text.replace(marker, fields + marker, 1), encoding="utf-8")
+        result = self.validate(project)
+        self.assertEqual(result.returncode, 0, result.stdout)
+        self.assertNotIn("顶层 expression 无效", result.stdout)
+        self.assertNotIn("properties[script]", result.stdout)
+        self.assertIn("properties[certificate]", result.stdout)
+        self.assertIn("未显式设置 enableExpression", result.stdout)
+        self.assertIn("properties[note]", result.stdout)
+        self.assertIn("expression: true 与 droppable", result.stdout)
+        self.assertIn("properties[query] enableExpression 是 CodeEditor 的组件属性", result.stdout)
+
     def test_missing_directory(self):
         result = self.validate(self.tmp / "does-not-exist")
         self.assertEqual(result.returncode, 1)

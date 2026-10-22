@@ -165,7 +165,7 @@ schema。后端原样透传，由前端 `ParameterInputList` 遍历 `properties`
 | `CredentialSelect`（访问凭证） | **不要**设 `expression`。选的是已保存的凭证实例，不按消息求值 |
 | `ExpressionInput` | 强制表达式模式，值始终带 `=` 前缀，不必再写 `expression` |
 | `JsonExpressionInput` | 内置 `={{ }}`，不必再写顶层 `expression` |
-| `CodeEditor` / `SqlEditor` / `JsonEditor` | 内置变量语法，**不要**设顶层 `expression`，用 `typeOptions.enableExpression` 控制 |
+| `CodeEditor` / `SqlEditor` / `JsonEditor` | 与其它可传值字段一样设顶层 `expression` + `droppable`，表示能否整段切换成 `={{ msg.xxx }}`。`enableExpression` 只属于 `CodeEditor` 的 `typeOptions`，控制编辑器内部是否按表达式存储，不能用来代替顶层 `expression` |
 | `BooleanExpressionInput` | 值**不带** `=` 前缀，直接是表达式字符串 |
 | `TestButton` / `Space` / `Tag` | 不产生参数，不要设 `expression` |
 
@@ -347,8 +347,8 @@ schema。后端原样透传，由前端 `ParameterInputList` 遍历 `properties`
 | 7 | `provider=credentials` 却写 `credentialsRef` | 该模式不用此字段，改用 `credentialsType` |
 | 8 | `RelationCollection` 在 `options` 定义 `_id` | `_id` 由组件自动生成 |
 | 9 | `trigger:"auto"` 但 `dependsOn` 含可选字段 | 改 `"manual"` |
-| 10 | 给 `CodeEditor` 设顶层 `expression: true` | 用 `typeOptions.enableExpression` |
-| 11 | 存证书用 `CodeEditor` 未关表达式 | 必须 `"enableExpression": false`，否则值带 `=` 前缀 |
+| 10 | 用顶层 `expression` 代替 `CodeEditor` 的 `enableExpression`，或反过来 | 顶层 `expression` 控制能否切换到表达式模式；`enableExpression` 只决定编辑器内容是否带 `=` 前缀。证书/纯文本必须 `"enableExpression": false`，需要整段传入 `={{ msg.xxx }}` 时另设 `expression` |
+| 11 | 存证书用 `CodeEditor` 未设 `enableExpression: false` | 必须 `"enableExpression": false`，否则值带 `=` 前缀。这与顶层 `expression` 无关 |
 | 12 | 用了 `loadOptions` 却无 `allow-create`/`clearable` | 远程失败时用户完全无法配置 |
 | 13 | `provider=bundle` 省略 `dependsOn` | 必须显式写出，无依赖写 `[]` |
 | 14 | 字段用 `type` 而非 `uiComponent` | 一律 `uiComponent` |

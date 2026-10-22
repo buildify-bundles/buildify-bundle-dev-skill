@@ -111,7 +111,7 @@ Maven 依赖：`cn.buildify:buildify-bundle-api`（版本见 `templates/project/
 
 1. `JsonValue` 读字段用 `path()`，不用 `get()`；也不要用 `Objects.requireNonNull` 做参数校验
 2. 同步路径在 `onMsg` 返回前 `tell*` 即可，框架自动 `complete`；异步路径必须对入站 `message` 调用 `context.complete()`
-3. 可传值字段默认 `expression: true`（访问凭证除外）；代码侧 `dynamicParameters` + `resolveExpressions`
+3. 可传值字段默认 `expression: true`（能否切换到表达式，访问凭证除外；`enableExpression` 只属于 `CodeEditor`）；代码侧 `dynamicParameters` + `resolveExpressions`
 4. 普通节点输出放 `output`；触发器 payload 放根级，并带 `triggerNodeId`、`eventId`、`workerId`
 5. 凭证类型 PascalCase；`credentialsType` 三处一致；`getCredentials` 用表单字段 `name`
 6. 已知错误用 `FlowNodeException`（含 `initialize` 参数校验）；触发器遵守

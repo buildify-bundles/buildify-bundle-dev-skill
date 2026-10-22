@@ -53,7 +53,12 @@ Monaco 多语言编辑器，值为 `String`。
 
 存证书 / 私钥 / 固定脚本时**必须**显式设 `false`，否则后端拿到的值带 `=` 前缀，解析失败。
 
-不要给 `CodeEditor` 设顶层 `expression: true`，该字段对编辑器类组件无效。
+顶层 `expression` 与 `enableExpression` 不是一回事，可以同时设置：
+
+| 字段 | 层级 | 作用 |
+|---|---|---|
+| `expression` | 字段顶层，配 `droppable` | 这个控件能否在固定值与 `={{ msg.xxx }}` 之间切换 |
+| `enableExpression` | `typeOptions`，仅 `CodeEditor` | 编辑器内部把内容存成带 `=` 前缀的表达式，还是存原始文本 |
 
 ### SqlEditor
 
@@ -61,7 +66,7 @@ Monaco 多语言编辑器，值为 `String`。
 "typeOptions": { "height": "200px", "title": "SQL 查询语句" }
 ```
 
-用 `#{msg.xxx}`（预编译参数，防注入）和 `${msg.xxx}`（表名/列名直接替换）。**禁止** `{{ }}` / `={{ }}`。`enableExpression` 不适用。
+用 `#{msg.xxx}`（预编译参数，防注入）和 `${msg.xxx}`（表名/列名直接替换）。**禁止**在 SQL 正文里写 `{{ }}` / `={{ }}`。`enableExpression` 不适用；整段 SQL 要换成消息表达式时，仍用顶层 `expression` 与 `droppable`。
 
 ### JsonEditor / JsonExpressionInput
 

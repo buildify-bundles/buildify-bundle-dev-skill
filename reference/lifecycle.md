@@ -36,9 +36,12 @@ support(message) → onMsg(context, message) × N
 destroy(context)                          ← 资源释放，必须幂等
 ```
 
-`context.complete(message)` 只表示**本条入站消息**处理完毕，不会销毁节点。同步路径
+`context.complete(message)` 表示这条消息处理完毕，不会销毁节点。同步路径
 （`onMsg` 返回前已 `tell*`，且未调用 `executeBlocking`）由框架在 `onMsg` 返回时自动收尾。
 异步路径必须在每条结束分支对入站消息调用 `complete`，否则在途消息无法归零。
+触发器的 `createTriggerMessage` 不经过 `onMsg`，框架不会自动收尾，必须 `complete` 这条新消息，
+否则本次触发无法结束。普通触发器紧接在 `tell*` 之后调用；特殊触发器按自身说明把调用挪到
+真正结束的位置，但不能省略。
 联调与生产都是节点实例保持到 workflow 停止后统一 `destroy()`。
 
 ## 参数热更新

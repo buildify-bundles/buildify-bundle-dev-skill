@@ -58,8 +58,10 @@ httpClient.sendAsync(request, BodyHandlers.ofString()).whenComplete((resp, err) 
 });
 ```
 
-触发器发出的是 `createTriggerMessage` 的新消息，不是 `onMsg` 的入站消息，
-`tellSuccess` / `tellNext` 之后不要对它 `complete`。
+触发器发出的是 `createTriggerMessage` 的新消息，不是 `onMsg` 的入站消息。
+框架不会自动收尾，必须对**这条新消息**调用 `context.complete`，否则本次触发无法结束。
+普通触发器在 `tellSuccess` / `tellNext` / `tellFailure` 之后立刻调用。特殊触发器按自身说明
+把 `complete` 挪到真正结束的位置（例如等待回执、批量刷出、异步回调结束），但不能省略。
 
 ## 规范 3：`dynamicParameters` + `resolveExpressions`
 
@@ -119,7 +121,9 @@ JsonValue payload = JsonValueFactory.objectNode()
     .put("eventId", eventId)               // 本次触发 ID，同时作为追踪 ID
     .put("workerId", workerId)             // context.getWorkerId()，不适用时 null
     .put("cron", cronExpr).put("timestamp", System.currentTimeMillis());
-context.tellSuccess(context.createTriggerMessage(payload, eventId));
+Message<JsonValue> triggered = context.createTriggerMessage(payload, eventId);
+context.tellSuccess(triggered);
+context.complete(triggered);   // 必须有。特殊触发器可按说明挪到真正结束处
 
 // ❌ 触发器不要包 output
 JsonValue bad = JsonValueFactory.objectNode().put("output", payload);
@@ -201,6 +205,7 @@ public void onParametersUpdated(Context context, JsonValue newParameters, JsonVa
 2. 每条消息必须用 `context.createTriggerMessage(payload, eventId)` 创建。payload 根级写
    `triggerNodeId`（`getWorkflowNodeId()`）、`eventId`（本次触发 UUID；有外部追踪 ID 时用它）、
    `workerId`（`getWorkerId()`，不适用时 `null`）。`eventId` 就是第二个参数，与 `__correlationId` 相同。
+   必须 `context.complete` 这条新消息。普通触发器紧接在 `tell*` 之后；特殊触发器可按说明调整位置，但不能省略。
 3. `destroy()` 中取消定时任务、注销 HTTP 路由。注解必须同时设 `isTrigger=true, hasInput=false`。
 
 ## 命名一致性（最常见的低级错误）

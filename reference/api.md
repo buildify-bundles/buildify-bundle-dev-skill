@@ -84,6 +84,7 @@ context.tellNext(message, Set.of("A", "B"));       // 广播到多个关系
 context.tellFailure(message, throwable);
 // 同步：onMsg 返回前 tell* 即可，框架自动 complete
 // 异步：每条结束路径对入站 message 调用 context.complete(message)
+// 触发器：createTriggerMessage 的新消息不在 onMsg 内，必须 complete。特殊触发器可按说明调整位置
 ```
 
 ### 凭证
@@ -177,6 +178,8 @@ JsonValue payload = JsonValueFactory.objectNode()
     .put("eventId", eventId)                           // 例：88724f81-e1a7-47cf-9105-0bffd00a5e98
     .put("workerId", context.getWorkerId());           // 例：wkr-dk7s8awx；不适用时 null
 Message<JsonValue> msg = context.createTriggerMessage(payload, eventId);
+context.tellSuccess(msg);
+context.complete(msg); // 必须有。特殊触发器可按说明挪到真正结束处
 ```
 
 `triggerNodeId`、`workerId` 在 `initialize()` 取出后复用；`eventId` 每次触发新生成。
@@ -234,8 +237,10 @@ public interface AsyncResult<T> {
 ## Message 与 MessageBuilder
 
 ```java
-// 触发器节点：eventId 同时写入 payload 和追踪 ID
+// 触发器节点：eventId 同时写入 payload 和追踪 ID，必须 complete（位置可按说明调整）
 Message<JsonValue> msg = context.createTriggerMessage(payload, eventId);
+context.tellSuccess(msg);
+context.complete(msg);
 
 // 普通节点：透传上游 headers（保留 CORRELATION_ID）
 Message<JsonValue> msg = MessageBuilder.withPayload(newPayload)

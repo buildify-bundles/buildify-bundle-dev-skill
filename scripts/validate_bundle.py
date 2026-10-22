@@ -816,6 +816,9 @@ def check_node_code(jf: JavaFile, is_trigger: bool) -> None:
         elif re.search(r"createTriggerMessage\(\s*[^,()]*(?:\([^()]*\)[^,()]*)*\)", code):
             err(loc, "createTriggerMessage 必须传两个参数 (payload, eventId)，"
                      "单参数写法生成的 __correlationId 与 payload.eventId 不一致")
+        if "createTriggerMessage(" in code and "complete(" not in code:
+            err(loc, "触发器必须 context.complete(createTriggerMessage 的新消息)，否则本次触发无法结束。"
+                     "普通触发器紧接在 tell* 之后；特殊触发器可按说明调整位置，但不能省略")
         missing_fields = [name for name in ("triggerNodeId", "eventId", "workerId")
                           if '"%s"' % name not in code and "'%s'" % name not in code]
         if missing_fields:

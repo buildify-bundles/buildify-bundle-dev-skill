@@ -75,7 +75,12 @@ public class {{NODE_NAME}} implements FlowNode {
                     .put("clientIp", rc.getClientIP());
 
             Message<JsonValue> msg = context.createTriggerMessage(payload, eventId);
-            context.tellSuccess(msg);
+            try {
+                context.tellSuccess(msg);
+            } finally {
+                // 必须 complete。特殊触发器可按说明把这次调用挪到真正结束处，但不能删除
+                context.complete(msg);
+            }
 
             rc.response().statusCode(200)
                     .contentType("application/json")

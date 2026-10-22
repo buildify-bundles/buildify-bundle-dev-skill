@@ -64,7 +64,13 @@ public class {{NODE_NAME}} implements FlowNode {
                     .put("workerId", workerId)
                     .put("triggeredAt", System.currentTimeMillis());
 
-            context.tellSuccess(context.createTriggerMessage(payload, eventId));
+            Message<JsonValue> triggered = context.createTriggerMessage(payload, eventId);
+            try {
+                context.tellSuccess(triggered);
+            } finally {
+                // 必须 complete。特殊触发器可按说明把这次调用挪到真正结束处，但不能删除
+                context.complete(triggered);
+            }
         } catch (Exception e) {
             log.error("[{{NODE_NAME}}] 触发失败", e);
             context.setStatus(NodeStatus.builder().color("red").text("触发失败").build());

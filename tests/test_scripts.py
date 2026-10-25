@@ -27,6 +27,7 @@ FULL_ARGS = BASE_ARGS + ["--node", "MyNode", "--trigger", "MyTrigger", "--webhoo
                          "--method", "GetTablesExecutor:getTables", "--generic-api", "ApiCall"]
 
 NODES = "src/main/java/com/example/bundle/nodes"
+SUPPORT = "src/main/java/com/example/bundle/support"
 RES = "src/main/resources"
 
 
@@ -96,6 +97,7 @@ class ScaffoldTest(ScriptTestCase):
             "lowercase node": ["--node", "myNode"],
             "duplicate node": ["--node", "A", "--trigger", "A"],
             "bad method spec": ["--node", "A", "--method", "NoColon"],
+            "lowercase error prefix": ["--node", "A", "--error-prefix", "ding"],
         }
         for label, extra in cases.items():
             with self.subTest(label):
@@ -174,6 +176,15 @@ WARNING_MUTATIONS = [
      f"{RES}/properties/MyNode.json", '"expression": true,', "", "expression: true 与 droppable"),
     ("icon missing",
      f"{RES}/bundle.json", '"icon": "default.svg",', "", "缺少 icon"),
+    ("init-only field with expression",
+     f"{RES}/properties/MyNode.json", '"uiComponent": "InputNumber",',
+     '"uiComponent": "InputNumber", "expression": true, "droppable": true,',
+     "properties[timeout] 只在 initialize() 中读取"),
+    ("trigger cron with expression",
+     f"{RES}/properties/MyTrigger.json", '"uiComponent": "Input",',
+     '"uiComponent": "Input", "expression": true,', "properties[cron] 只在 initialize() 中读取"),
+    ("error code missing from README",
+     "README.md", "`MISSING_HOST`", "", "未说明错误码 MISSING_HOST"),
 ]
 
 
@@ -214,7 +225,7 @@ class ValidatorMutationTest(ScriptTestCase):
         result = self.validate(self.full, "--strict")
         self.assertNotIn("JsonValue 读取必须用 path()", result.stdout)
 
-    def test_editor_expression_switch_is_not_enable_expression(self):
+    def test_code_editor_expression_rules(self):
         project = self.copy_full()
         path = project / RES / "properties" / "MyNode.json"
         text = path.read_text(encoding="utf-8")
@@ -224,43 +235,97 @@ class ValidatorMutationTest(ScriptTestCase):
       "name": "script",
       "label": "脚本",
       "uiComponent": "CodeEditor",
-      "expression": true,
-      "droppable": true,
       "typeOptions": { "lang": "javascript", "enableExpression": true }
     },
     {
       "name": "certificate",
       "label": "证书",
       "uiComponent": "CodeEditor",
-      "expression": true,
-      "droppable": true,
       "typeOptions": { "lang": "text" }
     },
     {
-      "name": "note",
-      "label": "备注",
+      "name": "switchable",
+      "label": "脚本",
       "uiComponent": "CodeEditor",
+      "expression": true,
+      "droppable": true,
       "typeOptions": { "lang": "javascript" }
+    },
+    {
+      "name": "payload",
+      "label": "请求体",
+      "uiComponent": "CodeEditor",
+      "typeOptions": { "lang": "json" }
     },
     {
       "name": "query",
       "label": "查询",
       "uiComponent": "SqlEditor",
-      "expression": true,
-      "droppable": true,
       "typeOptions": { "enableExpression": true }
     },
 """
         path.write_text(text.replace(marker, fields + marker, 1), encoding="utf-8")
         result = self.validate(project)
         self.assertEqual(result.returncode, 0, result.stdout)
-        self.assertNotIn("顶层 expression 无效", result.stdout)
         self.assertNotIn("properties[script]", result.stdout)
-        self.assertIn("properties[certificate]", result.stdout)
-        self.assertIn("未显式设置 enableExpression", result.stdout)
-        self.assertIn("properties[note]", result.stdout)
-        self.assertIn("expression: true 与 droppable", result.stdout)
+        self.assertIn("properties[certificate] CodeEditor(lang=text) 未显式设置 enableExpression",
+                      result.stdout)
+        self.assertIn("properties[switchable] CodeEditor 不要设 expression / droppable", result.stdout)
+        self.assertIn("properties[payload] CodeEditor(lang=json) 请优先改用 JsonExpressionInput",
+                      result.stdout)
         self.assertIn("properties[query] enableExpression 是 CodeEditor 的组件属性", result.stdout)
+        self.assertIn("properties[query] 可传值字段应设 expression: true 与 droppable", result.stdout)
+
+    def test_http_error_without_metadata_is_flagged(self):
+        project = self.copy_full()
+        path = project / SUPPORT / "HttpErrors.java"
+        text = path.read_text(encoding="utf-8")
+        old = '.with("body"'
+        self.assertIn(old, text)
+        path.write_text(text.replace(old, '.with("payload"'), encoding="utf-8")
+        result = self.validate(project)
+        self.assertEqual(result.returncode, 0, result.stdout)
+        self.assertIn("*_HTTP_ERROR", result.stdout)
+        self.assertNotIn("*_HTTP_ERROR", self.validate(self.full).stdout)
+
+    def test_init_only_fields_have_no_expression(self):
+        result = self.validate(self.full, "--strict")
+        self.assertNotIn("只在 initialize() 中读取", result.stdout)
+        init_only = {"MyNode": ["timeout"], "ApiCall": ["timeout"],
+                     "MyTrigger": ["cron", "timezone"], "MyHook": ["path", "timeout"]}
+        for form, names in init_only.items():
+            text = (self.full / RES / "properties" / f"{form}.json").read_text(encoding="utf-8")
+            for name in names:
+                marker = f'"name": "{name}",'
+                self.assertIn(marker, text, f"{form}.{name}")
+                block = text.split(marker, 1)[1].split("}", 1)[0]
+                self.assertNotIn('"expression"', block, f"{form}.{name}")
+
+
+class ErrorPrefixTest(ScriptTestCase):
+
+    def test_prefix_derived_from_artifact_id(self):
+        errors = (self.full / SUPPORT / "HttpErrors.java").read_text(encoding="utf-8")
+        self.assertIn('PREFIX = "DEMO"', errors)
+        readme = (self.full / "README.md").read_text(encoding="utf-8")
+        self.assertIn("`DEMO_HTTP_ERROR`", readme)
+        self.assertIn('"code": "DEMO_HTTP_ERROR"', readme)
+
+    def test_prefix_override_and_stripping(self):
+        cases = {
+            "explicit": ("demo", ["--error-prefix", "DINGTALK"], "DINGTALK"),
+            "bundle- stripped": ("bundle-ding-talk", [], "DING_TALK"),
+        }
+        for label, (artifact, extra, expected) in cases.items():
+            with self.subTest(label):
+                project = self.tmp / f"prefix-{expected}"
+                args = list(BASE_ARGS)
+                args[args.index("--artifact-id") + 1] = artifact
+                result = run(SCAFFOLD, "--dir", str(project), *args, "--node", "MyNode", *extra)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                errors = (project / SUPPORT / "HttpErrors.java").read_text(encoding="utf-8")
+                self.assertIn(f'PREFIX = "{expected}"', errors)
+                self.assertEqual(self.validate(project, "--strict").returncode, 0)
 
     def test_missing_directory(self):
         result = self.validate(self.tmp / "does-not-exist")

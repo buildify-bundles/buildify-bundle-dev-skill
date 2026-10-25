@@ -44,7 +44,31 @@
 }
 ```
 
-下游节点用 `={{ msg.output.statusCode }}` 引用。失败时消息走 `Failure` 链路。
+下游节点用 `={{ msg.output.statusCode }}` 引用。
+
+HTTP 非 2xx 时消息走 `Failure` 链路，状态码和响应体在 `msg.error.metadata` 中：
+
+```json
+{
+  "error": {
+    "code": "{{ERROR_PREFIX}}_HTTP_ERROR",
+    "message": "请求无效（HTTP 400），请检查请求参数。响应：{\"errcode\":40035,\"errmsg\":\"...\"}",
+    "metadata": {
+      "statusCode": 400,
+      "body": { "errcode": 40035, "errmsg": "..." }
+    }
+  }
+}
+```
+
+连接失败、超时同样走 `Failure`，这时 `metadata` 中没有 `statusCode` / `body`。
+响应中的 Token、密钥等字段写入前已替换为 `***`。
+
+## 错误码
+
+失败时 `msg.error.code` 的取值：
+
+{{ERROR_CODES}}
 
 ## 项目结构
 

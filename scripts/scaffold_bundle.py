@@ -7,7 +7,7 @@
         --bundle-name example/my-bundle --package com.example.bundle \
         --node MyNode [--trigger MyTriggerNode] [--webhook MyWebhookNode] \
         [--credential MyApiCredential] [--method GetTablesExecutor:getTables] \
-        [--generic-api ApiCall]
+        [--generic-api ApiCall] [--error-prefix DEMO]
 
 同时提供 --credential 时，普通节点表单会自动生成 CredentialSelect 字段；
 再配合 --method 时会生成一个通过 credentialsRef 联动的远程 Select 字段。
@@ -29,6 +29,7 @@ TEMPLATES = Path(__file__).resolve().parent.parent / "templates"
 NODE_NAME_RE = re.compile(r"^[A-Z][A-Za-z0-9]*$")
 PACKAGE_RE = re.compile(r"^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)*$")
 BUNDLE_NAME_RE = re.compile(r"^[a-z0-9][a-z0-9._-]*/[a-z0-9][a-z0-9._-]*$")
+ERROR_PREFIX_RE = re.compile(r"^[A-Z][A-Z0-9_]*$")
 
 CREDENTIAL_FIELD = "credentialsId"
 
@@ -70,6 +71,9 @@ def parse_args() -> argparse.Namespace:
                         "需同时提供 --credential")
     p.add_argument("--method", action="append", default=[],
                    help="动态方法，格式 类名:方法名（如 GetTablesExecutor:getTables），可重复")
+    p.add_argument("--error-prefix",
+                   help="错误码前缀（大写下划线，如 DINGTALK），生成 DINGTALK_HTTP_ERROR 等。"
+                        "默认由 artifactId 推导")
     p.add_argument("--group-label", default="通用", help="bundle.json 中的分组显示名")
     p.add_argument("--version", default="1.0.0-SNAPSHOT", help="初始版本号")
     p.add_argument("--force", action="store_true", help="覆盖已存在的文件")
@@ -108,10 +112,62 @@ def validate(args: argparse.Namespace) -> None:
             errors.append(f"--method 类名必须是 PascalCase: {cls}")
         if not method or not method[0].islower():
             errors.append(f"--method 方法名应为 camelCase: {method}")
+    if args.error_prefix is not None and not ERROR_PREFIX_RE.match(args.error_prefix):
+        errors.append(f"--error-prefix 应为大写字母开头的大写下划线格式（如 DINGTALK），"
+                      f"实际: {args.error_prefix}")
     if errors:
         for e in errors:
             print(f"ERROR  {e}", file=sys.stderr)
         raise SystemExit(1)
+
+
+def derive_error_prefix(artifact_id: str) -> str:
+    """bundle-dingtalk-bot → DINGTALK_BOT。"""
+    name = re.sub(r"^bundle[-_.]|[-_.]bundle$", "", artifact_id.lower())
+    prefix = re.sub(r"[^A-Z0-9]+", "_", name.upper()).strip("_")
+    return prefix if prefix and prefix[0].isalpha() else "API"
+
+
+VALIDATION_CODE = ("VALIDATION_ERROR", "节点参数校验失败，节点未启动",
+                   "按 `metadata.field` / `metadata.constraint` 修正节点配置")
+HTTP_CODES = [
+    ("INVALID_URL", "请求地址格式错误", "检查 url / path 及其表达式结果"),
+    ("HTTP_IO_ERROR", "连接失败或超时，没有拿到响应", "检查网络、地址与超时设置"),
+    ("{p}_HTTP_ERROR", "接口返回非 2xx",
+     "查看 `metadata.statusCode` 与 `metadata.body`，按提示检查凭证或参数"),
+    ("RESPONSE_ERROR", "处理响应时出错", "查看节点日志"),
+]
+NODE_CODES = [
+    ("MISSING_URL", "url 表达式求值为空", "检查上游消息是否提供该字段"),
+    ("{p}_API_<业务码>", "HTTP 2xx 但接口返回业务错误码",
+     "对照厂商文档的错误码；`metadata.body` 为原始响应"),
+]
+GENERIC_API_CODES = [
+    ("MISSING_CREDENTIALS", "未选择访问凭证，或凭证已被删除", "在节点中重新选择凭证"),
+    ("MISSING_HOST", "凭证 host 为空", "编辑凭证补全 host"),
+    ("MISSING_API_KEY", "凭证 apiKey 为空，且请求头未提供鉴权", "补全凭证 apiKey，或在 headers 中写鉴权头"),
+]
+
+
+def error_codes_table(args: argparse.Namespace, prefix: str) -> str:
+    rows = []
+    if args.node or args.generic_api or args.webhook:
+        rows.append(VALIDATION_CODE)
+    if args.node or args.generic_api:
+        rows += HTTP_CODES
+    if args.node:
+        rows += NODE_CODES
+    if args.generic_api:
+        rows += GENERIC_API_CODES
+    if not rows:
+        return "本 Bundle 的节点不产生结构化错误码。"
+    seen, lines = set(), ["| 错误码 | 含义 | 排查建议 |", "|--------|------|----------|"]
+    for code, meaning, advice in rows:
+        code = code.format(p=prefix)
+        if code not in seen:
+            seen.add(code)
+            lines.append(f"| `{code}` | {meaning} | {advice} |")
+    return "\n".join(lines)
 
 
 def generic_api_readme(names: list) -> str:
@@ -136,7 +192,9 @@ def generic_api_readme(names: list) -> str:
 
 域名和密钥来自凭证的 `host`、`port`、`apiKey`。`path` 以 `http://` 或 `https://` 开头时当作完整地址。
 
-成功时输出 `msg.output.statusCode` 与 `msg.output.body`（含 4xx/5xx）。连接失败或超时走 Failure。
+HTTP 2xx 时输出 `msg.output.statusCode` 与 `msg.output.body`。
+HTTP 非 2xx 走 Failure，状态码和响应体在 `msg.error.metadata.statusCode` 与 `msg.error.metadata.body`。
+连接失败或超时也走 Failure，这时没有 `statusCode` / `body`。
 """
 
 
@@ -246,6 +304,14 @@ def main() -> None:
     write(services / "cn.buildify.bundle.api.FlowNode",
           "".join(f"{args.package}.nodes.{n}\n" for n, _, _, _ in node_specs), args.force)
 
+    # 三方接口失败统一写入 msg.error.metadata（statusCode / body）
+    error_prefix = args.error_prefix or derive_error_prefix(args.artifact_id)
+    if args.node or args.generic_api or args.credential:
+        write(pkg_path / "support" / "HttpErrors.java", render("java/HttpErrors.java.tmpl", {
+            "PACKAGE": args.package,
+            "ERROR_PREFIX": error_prefix,
+        }), args.force)
+
     # 凭证：propertiesFile 文件名必须与 @CredentialsDescription(type) 逐字一致
     for cred in args.credential:
         write(pkg_path / "credentials" / f"{cred}Provider.java",
@@ -281,6 +347,8 @@ def main() -> None:
         "ARTIFACT_ID": args.artifact_id,
         "NODE_NAME": first_node,
         "PACKAGE_PATH": "/".join(args.package.split(".")),
+        "ERROR_PREFIX": error_prefix,
+        "ERROR_CODES": error_codes_table(args, error_prefix),
     })
     if args.generic_api:
         readme += generic_api_readme(args.generic_api)

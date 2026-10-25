@@ -42,15 +42,16 @@ BUILTIN_METHODS = {"test"}
 
 # 节点表单里默认可切换到表达式模式的控件。
 # expression 是字段级开关（能否在固定值与 ={{ msg.xxx }} 之间切换）。
-# CodeEditor 的 typeOptions.enableExpression 是组件自身属性（编辑内容是否按表达式存储），两者独立。
-# 访问凭证、纯展示/操作，以及本身就只工作在表达式模式的控件不在此列。
+# CodeEditor 不在此列：顶层 expression / droppable 与编辑器交互冲突，
+# 是否按表达式存储只由 typeOptions.enableExpression 决定。
+# 访问凭证、纯展示/操作，以及本身就只工作在表达式模式的控件也不在此列。
 EXPRESSION_DEFAULT_COMPONENTS = {
     "Input", "Password", "InputNumber", "Select", "Segmented",
     "RadioGroup", "RadioButtonGroup", "CheckboxGroup",
     "Switch", "Slider",
     "DatePicker", "DateTimePicker", "TimePicker",
     "Cascader", "ColorPicker",
-    "CodeEditor", "SqlEditor", "JsonEditor",
+    "SqlEditor", "JsonEditor",
 }
 
 # 不产生业务数据的纯 UI 组件，不应出现在 defaultValue 中
@@ -256,20 +257,30 @@ def walk_fields(fields, loc: str, path_prefix: str, ctx: dict) -> None:
         if component != "CodeEditor" and "enableExpression" in type_options:
             warn(loc, f"{where} enableExpression 是 CodeEditor 的组件属性，{component} 没有该属性；"
                       "能否切换到表达式模式由顶层 expression 控制")
+        init_only = path_prefix == "properties" and name in ctx.get("init_only_fields", ())
         if component == "CredentialSelect" and field.get("expression"):
             err(loc, f"{where} 访问凭证不要开启 expression：选的是已保存的凭证实例，"
                      "不按消息求值")
+        elif init_only:
+            if field.get("expression") or field.get("droppable"):
+                warn(loc, f"{where} 只在 initialize() 中读取、未放入 dynamicParameters，"
+                          "不会按消息求值；去掉 expression / droppable，"
+                          "或把它放进 dynamicParameters 在 onMsg 中 resolveExpressions")
         elif (ctx.get("expression_default")
               and component in EXPRESSION_DEFAULT_COMPONENTS
               and not (field.get("expression") and field.get("droppable"))):
             warn(loc, f"{where} 可传值字段应设 expression: true 与 droppable: true，"
                       "否则无法写入 ={{ msg.xxx }}；仅访问凭证保持关闭")
         if component == "CodeEditor":
+            if field.get("expression") or field.get("droppable"):
+                warn(loc, f"{where} CodeEditor 不要设 expression / droppable，会与编辑器交互冲突；"
+                          "是否按表达式存储由 typeOptions.enableExpression 决定")
             lang = type_options.get("lang", "text")
+            if lang == "json":
+                warn(loc, f"{where} CodeEditor(lang=json) 请优先改用 JsonExpressionInput")
             if lang == "text" and "enableExpression" not in type_options:
                 warn(loc, f"{where} CodeEditor(lang=text) 未显式设置 enableExpression；"
-                          "这是编辑器自身属性，存证书/纯文本时必须设为 false，否则存储值会带 '=' 前缀。"
-                          "顶层 expression 只控制能否切换到表达式模式，不能代替它")
+                          "存证书/纯文本时必须设为 false，否则存储值会带 '=' 前缀")
 
         # --- 条件显示
         display = field.get("displayOptions")
@@ -458,8 +469,10 @@ def check_properties_file(path: Path, project: Path, ctx: dict):
 
     cred_fields: dict = {}
     collect_credential_fields(data["properties"], cred_fields)
-    is_node_form = path.relative_to(project / "src/main/resources").parts[0] == "properties"
-    ctx = dict(ctx, form_credential_fields=cred_fields, expression_default=is_node_form)
+    rel_res = path.relative_to(project / "src/main/resources")
+    is_node_form = rel_res.parts[0] == "properties"
+    ctx = dict(ctx, form_credential_fields=cred_fields, expression_default=is_node_form,
+               init_only_fields=ctx.get("init_only_by_form", {}).get(rel_res.as_posix(), set()))
 
     walk_fields(data["properties"], loc, "properties", ctx)
 
@@ -537,6 +550,41 @@ def check_common_code(jf: JavaFile) -> None:
         warn(loc, "表达式占位名统一用 msg（如 {{ msg.output.x }}），不要用 $json")
     if re.search(r"log\.\w+\([^)]*(?i:password|apikey|api_key|secret|token)", code):
         warn(loc, "疑似将凭证字段写入日志，请脱敏")
+
+
+def _calls_http_errors(java_files: list, method: str) -> bool:
+    pattern = re.compile(r"\bHttpErrors\s*\.\s*%s\(" % method)
+    return any(pattern.search(jf.code) for jf in java_files)
+
+
+def check_error_codes(project: Path, java_files: list) -> None:
+    """接口失败带上 statusCode / body；代码里用到的错误码都要写进 README。"""
+    codes = set()
+    for jf in java_files:
+        code = jf.code
+        codes.update(re.findall(r"FlowNodeException\(\s*\"([A-Z][A-Z0-9_]*)\"", code))
+        if "Validator.of(" in code:
+            codes.add("VALIDATION_ERROR")
+        if re.search(r"\"[A-Z0-9_]*HTTP_ERROR\"", code) and not (
+                re.search(r"\.with\(\s*\"statusCode\"", code)
+                and re.search(r"\.with\(\s*\"body\"", code)):
+            warn(jf.rel, "接口调用失败（*_HTTP_ERROR）应 .with(\"statusCode\", ...) 与 "
+                         ".with(\"body\", ...) 把状态码和解析后的响应体放进 msg.error.metadata")
+        prefix = re.search(r"\bPREFIX\s*=\s*\"([A-Z][A-Z0-9_]*)\"", code)
+        if prefix:
+            if _calls_http_errors(java_files, "httpError"):
+                codes.add(prefix.group(1) + "_HTTP_ERROR")
+            if _calls_http_errors(java_files, "apiError"):
+                codes.add(prefix.group(1) + "_API_")
+
+    readme = project / "README.md"
+    if not codes or not readme.is_file():
+        return
+    text = readme.read_text(encoding="utf-8", errors="replace")
+    missing = sorted(c for c in codes if c not in text)
+    if missing:
+        warn("README.md", "未说明错误码 %s；README 的「错误码」一节需逐一写明含义与排查建议"
+                          % "、".join(missing))
 
 
 def check_node_service(jf: JavaFile, is_method_executor: bool = False) -> None:
@@ -771,6 +819,14 @@ def _json_get_calls(code: str) -> list:
     return sorted(set(hits))
 
 
+def init_only_parameters(code: str) -> set:
+    """代码里读过、但没有放进 dynamicParameters 的参数，只在 initialize() 生效。"""
+    read = set(re.findall(r"\b\w*[pP]arameters\s*\.\s*path\(\s*\"([^\"]+)\"\s*\)", code))
+    dynamic = set(re.findall(
+        r"\.put\(\s*\"[^\"]+\"\s*,\s*\w*[pP]arameters\s*\.\s*path\(\s*\"([^\"]+)\"\s*\)\s*\)", code))
+    return read - dynamic
+
+
 def check_node_code(jf: JavaFile, is_trigger: bool) -> None:
     code, loc = jf.code, jf.rel
 
@@ -783,7 +839,6 @@ def check_node_code(jf: JavaFile, is_trigger: bool) -> None:
     if re.search(r"\bObjects\s*\.\s*requireNonNull\(", code):
         warn(loc, "Objects.requireNonNull 失败时抛 NullPointerException，"
                   "参数校验请改用 FlowNodeException（onMsg 中走 tellFailure）")
-
     routed = re.search(r"\btell(?:Success|Failure|Next)\(", code)
     has_async = re.search(r"\bexecuteBlocking\(|\bsendAsync\(|\bwhenComplete\(|\bthenAccept\(", code)
 
@@ -817,7 +872,8 @@ def check_node_code(jf: JavaFile, is_trigger: bool) -> None:
             err(loc, "createTriggerMessage 必须传两个参数 (payload, eventId)，"
                      "单参数写法生成的 __correlationId 与 payload.eventId 不一致")
         if "createTriggerMessage(" in code and "complete(" not in code:
-            err(loc, "触发器必须 context.complete(createTriggerMessage 的新消息)，否则本次触发无法结束。"
+            err(loc, "触发器必须 context.complete(createTriggerMessage 的新消息)，且每条只调一次，"
+                     "否则触发器节点的执行次数、QPS、耗时不会被统计。"
                      "普通触发器紧接在 tell* 之后；特殊触发器可按说明调整位置，但不能省略")
         missing_fields = [name for name in ("triggerNodeId", "eventId", "workerId")
                           if '"%s"' % name not in code and "'%s'" % name not in code]
@@ -1020,6 +1076,8 @@ def main() -> int:
         elif not (resources / props).is_file():
             err(jf.rel, f"propertiesFile 指向的文件不存在: src/main/resources/{props}")
         nodes[name] = {"file": jf.rel, "trigger": is_trigger, "properties": props, "java": jf}
+        if props:
+            ctx.setdefault("init_only_by_form", {})[props] = init_only_parameters(jf.code)
         check_node_code(jf, is_trigger)
         check_common_code(jf)
         check_node_service(jf)
@@ -1076,6 +1134,7 @@ def main() -> int:
                                         f"中的默认值 {k}={v!r}")
 
     check_spi(project, impls, all_fqcn)
+    check_error_codes(project, java_files)
 
     # --- 输出
     errors = [e for e in ERRORS if e[0] == "ERROR"]

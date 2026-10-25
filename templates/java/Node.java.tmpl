@@ -1,5 +1,6 @@
 package {{PACKAGE}}.nodes;
 
+import {{PACKAGE}}.support.HttpErrors;
 import cn.buildify.bundle.api.Context;
 import cn.buildify.bundle.api.FlowNode;
 import cn.buildify.bundle.api.FlowNodeDescription;
@@ -9,6 +10,7 @@ import cn.buildify.bundle.api.json.JsonValueFactory;
 import cn.buildify.bundle.api.message.Message;
 import cn.buildify.bundle.api.message.support.MessageBuilder;
 import cn.buildify.bundle.api.status.NodeStatus;
+import cn.buildify.bundle.api.validation.Validator;
 import lombok.extern.slf4j.Slf4j;
 
 import java.net.URI;
@@ -16,6 +18,7 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
+import java.util.Locale;
 
 @Slf4j
 @FlowNodeDescription(name = "{{NODE_NAME}}", propertiesFile = "properties/{{NODE_NAME}}.json")
@@ -27,13 +30,11 @@ public class {{NODE_NAME}} implements FlowNode {
 
     @Override
     public void initialize(Context context, JsonValue parameters) {
-        if (parameters.path("url").asText("").isBlank()) {
-            throw new FlowNodeException("MISSING_URL", "url 不能为空");
-        }
-        this.timeout = parameters.path("timeout").asInt(30);
-        if (this.timeout <= 0) {
-            throw new FlowNodeException("INVALID_TIMEOUT", "timeout 必须大于 0");
-        }
+        Validator.of(parameters.path("url").asText(""), "url").notBlank("url 不能为空");
+        int configuredTimeout = parameters.path("timeout").asInt(30);
+        this.timeout = Validator.of(configuredTimeout, "timeout")
+                .range(1, 300, "timeout 必须在 1~300 秒之间")
+                .get();
 
         this.httpClient = HttpClient.newBuilder()
                 .connectTimeout(Duration.ofSeconds(timeout))
@@ -59,7 +60,8 @@ public class {{NODE_NAME}} implements FlowNode {
         // 含表达式的参数原样存入 dynamicParameters，在 onMsg 中按消息求值
         this.dynamicParameters = JsonValueFactory.objectNode()
                 .put("url", parameters.path("url"))
-                .put("method", parameters.path("method"));
+                .put("method", parameters.path("method"))
+                .put("body", parameters.path("body"));
     }
 
     @Override
@@ -76,11 +78,16 @@ public class {{NODE_NAME}} implements FlowNode {
 
         HttpRequest request;
         try {
-            request = HttpRequest.newBuilder()
+            HttpRequest.Builder builder = HttpRequest.newBuilder()
                     .uri(URI.create(url))
-                    .timeout(Duration.ofSeconds(timeout))
-                    .method(method.toUpperCase(), HttpRequest.BodyPublishers.noBody())
-                    .build();
+                    .timeout(Duration.ofSeconds(timeout));
+            HttpRequest.BodyPublisher publisher = HttpRequest.BodyPublishers.noBody();
+            JsonValue body = parameters.path("body");
+            if (sendsBody(method) && !body.isMissingNode() && !body.isNull()) {
+                publisher = HttpRequest.BodyPublishers.ofString(body.toJson());
+                builder.header("Content-Type", "application/json");
+            }
+            request = builder.method(method.toUpperCase(Locale.ROOT), publisher).build();
         } catch (Exception e) {
             context.tellFailure(message,
                     new FlowNodeException("INVALID_URL", "URL 格式错误: " + url, e).with("url", url));
@@ -90,16 +97,27 @@ public class {{NODE_NAME}} implements FlowNode {
         httpClient.sendAsync(request, HttpResponse.BodyHandlers.ofString())
                 .whenComplete((response, error) -> {
                     if (error != null) {
-                        log.error("[{{NODE_NAME}}] 请求失败 url={}", url, error);
+                        log.warn("[{{NODE_NAME}}] 请求失败 url={} cause={}", url, error.toString());
                         context.tellFailure(message, new FlowNodeException(
                                 "HTTP_IO_ERROR", "请求失败: " + error.getMessage(), error).with("url", url));
                         context.complete(message);
                         return;
                     }
                     try {
+                        int status = response.statusCode();
+                        if (!HttpErrors.isSuccess(status)) {
+                            context.tellFailure(message, HttpErrors.httpError(status, response.body()));
+                            return;
+                        }
+                        JsonValue body = HttpErrors.parseBody(response.body());
+                        FlowNodeException apiError = checkBusinessError(status, body);
+                        if (apiError != null) {
+                            context.tellFailure(message, apiError);
+                            return;
+                        }
                         JsonValue output = JsonValueFactory.objectNode()
-                                .put("statusCode", response.statusCode())
-                                .put("body", parseBody(response.body()));
+                                .put("statusCode", status)
+                                .put("body", body);
                         JsonValue newPayload = JsonValueFactory.objectNode().put("output", output);
                         context.tellSuccess(MessageBuilder.withPayload(newPayload)
                                 .copyHeaders(message.getHeaders()).build());
@@ -113,23 +131,25 @@ public class {{NODE_NAME}} implements FlowNode {
                 });
     }
 
+    /**
+     * HTTP 2xx 但业务失败时返回异常，否则返回 null。按厂商约定改写，例如：
+     * {@code errcode != 0 → HttpErrors.apiError(String.valueOf(errcode), errmsg, status, body)}
+     */
+    private FlowNodeException checkBusinessError(int status, JsonValue body) {
+        return null;
+    }
+
+    private static boolean sendsBody(String method) {
+        String m = method.toUpperCase(Locale.ROOT);
+        return "POST".equals(m) || "PUT".equals(m) || "PATCH".equals(m) || "DELETE".equals(m);
+    }
+
     /** 幂等释放 */
     @Override
     public void destroy(Context context) {
         if (httpClient != null) {
             httpClient.close();
             httpClient = null;
-        }
-    }
-
-    private JsonValue parseBody(String body) {
-        if (body == null || body.isBlank()) {
-            return JsonValueFactory.objectNode();
-        }
-        try {
-            return JsonValueFactory.fromJson(body);
-        } catch (Exception e) {
-            return JsonValueFactory.objectNode().put("raw", body);
         }
     }
 }

@@ -1,5 +1,6 @@
 package {{PACKAGE}}.nodes;
 
+import {{PACKAGE}}.support.HttpErrors;
 import cn.buildify.bundle.api.Context;
 import cn.buildify.bundle.api.Credentials;
 import cn.buildify.bundle.api.FlowNode;
@@ -10,6 +11,7 @@ import cn.buildify.bundle.api.json.JsonValueFactory;
 import cn.buildify.bundle.api.message.Message;
 import cn.buildify.bundle.api.message.support.MessageBuilder;
 import cn.buildify.bundle.api.status.NodeStatus;
+import cn.buildify.bundle.api.validation.Validator;
 import lombok.extern.slf4j.Slf4j;
 
 import java.net.URI;
@@ -35,10 +37,10 @@ public class {{NODE_NAME}} implements FlowNode {
 
     @Override
     public void initialize(Context context, JsonValue parameters) {
-        this.timeout = parameters.path("timeout").asInt(30);
-        if (this.timeout <= 0) {
-            throw new FlowNodeException("INVALID_TIMEOUT", "timeout 必须大于 0");
-        }
+        int configuredTimeout = parameters.path("timeout").asInt(30);
+        this.timeout = Validator.of(configuredTimeout, "timeout")
+                .range(1, 300, "timeout 必须在 1~300 秒之间")
+                .get();
         this.httpClient = HttpClient.newBuilder()
                 .connectTimeout(Duration.ofSeconds(timeout))
                 .followRedirects(HttpClient.Redirect.NORMAL)
@@ -72,9 +74,17 @@ public class {{NODE_NAME}} implements FlowNode {
         JsonValue payload = getPayload(message, JsonValue.class);
         JsonValue parameters = context.resolveExpressions(dynamicParameters, payload);
 
-        Credentials credentials = context.getCredentials("credentialsId");
-        if (credentials == null || credentials.getData() == null) {
-            context.tellFailure(message, new FlowNodeException("MISSING_CREDENTIALS", "未选择访问凭证"));
+        Credentials credentials;
+        try {
+            // 未选择或凭证已删除时抛异常，不会返回 null
+            credentials = context.getCredentials("credentialsId");
+        } catch (RuntimeException e) {
+            context.tellFailure(message,
+                    new FlowNodeException("MISSING_CREDENTIALS", "未选择访问凭证或凭证不存在", e));
+            return;
+        }
+        if (credentials.getData() == null) {
+            context.tellFailure(message, new FlowNodeException("MISSING_CREDENTIALS", "凭证内容为空"));
             return;
         }
         Map<String, Object> data = credentials.getData();
@@ -126,16 +136,22 @@ public class {{NODE_NAME}} implements FlowNode {
         httpClient.sendAsync(request, HttpResponse.BodyHandlers.ofString())
                 .whenComplete((response, error) -> {
                     if (error != null) {
-                        log.error("[{{NODE_NAME}}] 请求失败 url={}", url, error);
+                        log.warn("[{{NODE_NAME}}] 请求失败 url={} cause={}", url, error.toString());
                         context.tellFailure(message, new FlowNodeException(
                                 "HTTP_IO_ERROR", "请求失败: " + error.getMessage(), error).with("url", url));
                         context.complete(message);
                         return;
                     }
                     try {
+                        int status = response.statusCode();
+                        if (!HttpErrors.isSuccess(status)) {
+                            context.tellFailure(message, HttpErrors.httpError(status, response.body()));
+                            return;
+                        }
+                        JsonValue body = HttpErrors.parseBody(response.body());
                         JsonValue output = JsonValueFactory.objectNode()
-                                .put("statusCode", response.statusCode())
-                                .put("body", parseBody(response.body()));
+                                .put("statusCode", status)
+                                .put("body", body);
                         JsonValue newPayload = JsonValueFactory.objectNode().put("output", output);
                         context.tellSuccess(MessageBuilder.withPayload(newPayload)
                                 .copyHeaders(message.getHeaders()).build());
@@ -238,14 +254,4 @@ public class {{NODE_NAME}} implements FlowNode {
         return out.toString();
     }
 
-    private static JsonValue parseBody(String body) {
-        if (body == null || body.isBlank()) {
-            return JsonValueFactory.objectNode();
-        }
-        try {
-            return JsonValueFactory.fromJson(body);
-        } catch (Exception e) {
-            return JsonValueFactory.objectNode().put("raw", body);
-        }
-    }
 }

@@ -40,8 +40,10 @@ destroy(context)                          ← 资源释放，必须幂等
 （`onMsg` 返回前已 `tell*`，且未调用 `executeBlocking`）由框架在 `onMsg` 返回时自动收尾。
 异步路径必须在每条结束分支对入站消息调用 `complete`，否则在途消息无法归零。
 触发器的 `createTriggerMessage` 不经过 `onMsg`，框架不会自动收尾，必须 `complete` 这条新消息，
-否则本次触发无法结束。普通触发器紧接在 `tell*` 之后调用；特殊触发器按自身说明把调用挪到
-真正结束的位置，但不能省略。
+且每条只调一次。它只用于指标：给触发器节点记一次执行（执行次数、QPS），并记录从创建消息到
+`complete` 的耗时。省略时这些指标恒为 0，下游流程不受影响；框架不去重，重复调用会重复计数。
+普通触发器紧接在 `tell*` 之后调用；特殊触发器按自身说明把调用挪到真正结束的位置
+（耗时才包含等待回执、批量刷出的时间），但不能省略。
 联调与生产都是节点实例保持到 workflow 停止后统一 `destroy()`。
 
 ## 参数热更新
@@ -94,10 +96,14 @@ public boolean onCredentialsUpdated(Context context, String type, String name) {
     if (!"MyApiCredential".equals(type)) {
         return false;      // 无关凭证类型，交回框架处理
     }
-    this.client = buildClient(context.getCredentials("apiKey"));
+    // 重新读取时仍传表单 CredentialSelect 字段的 name
+    this.client = buildClient(context.getCredentials("credentialsId"));
     return true;
 }
 ```
+
+参数含义：`type` 是凭证类型标识（`@CredentialsDescription.type`），`name` 是用户在控制台给凭证实例起的名字，
+**不是**表单字段 `name`，不能拿它去调 `getCredentials(name)`。节点有多个凭证框时，按 `type` 判断要重建哪个客户端。
 
 方法内抛异常时框架同样回退为重启节点，无需自行兜底。
 

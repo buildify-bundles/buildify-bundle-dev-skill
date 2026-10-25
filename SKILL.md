@@ -44,7 +44,7 @@ Bundle 开发进度：
 |---|---|
 | **新建 Bundle** | 执行下方 `scaffold_bundle.py` |
 | **对接三方 HTTP API** | 加 `--generic-api ApiCall`，见 [reference/generic-api.md](reference/generic-api.md) |
-| **已有项目加节点** | 勿重跑 scaffold；复制 `templates/java/`、`templates/forms/`，并补 SPI |
+| **已有项目加节点** | 勿重跑 scaffold；复制 `templates/java/`、`templates/forms/`，并补 SPI；项目里没有 `support/HttpErrors.java` 时一并复制 |
 | **实现 / 审查节点代码** | [coding-rules.md](coding-rules.md) |
 | **写 / 改表单 schema** | [reference/forms-schema.md](reference/forms-schema.md) |
 | **查某 uiComponent 的 typeOptions** | [reference/forms-components.md](reference/forms-components.md) |
@@ -75,6 +75,7 @@ python3 <skill-root>/scripts/scaffold_bundle.py \
 
 可重复：`--node` / `--trigger` / `--webhook` / `--credential PascalCase` /
 `--method ClassName:methodName` / `--generic-api ApiCall`。至少提供一个节点类选项。
+`--error-prefix DINGTALK` 指定错误码前缀（默认由 `artifactId` 推导，`bundle-dingtalk-bot` → `DINGTALK_BOT`）。
 对接三方 HTTP 时加上 `--generic-api`（类名以 `ApiCall` 结尾，且要有 `--credential`）：
 文档里还没有专用节点的接口，Agent 用这个节点按文档填 `method` / `path` / `query` / `headers` / `body`。
 
@@ -110,11 +111,11 @@ Maven 依赖：`cn.buildify:buildify-bundle-api`（版本见 `templates/project/
 完整示例见 [coding-rules.md](coding-rules.md)：
 
 1. `JsonValue` 读字段用 `path()`，不用 `get()`；也不要用 `Objects.requireNonNull` 做参数校验
-2. 同步路径在 `onMsg` 返回前 `tell*` 即可，框架自动 `complete`；异步路径必须对入站 `message` 调用 `context.complete()`。触发器的新消息不在 `onMsg` 内，必须 `complete`；特殊触发器可按说明调整调用位置，但不能省略
-3. 可传值字段默认 `expression: true`（能否切换到表达式，访问凭证除外；`enableExpression` 只属于 `CodeEditor`）；代码侧 `dynamicParameters` + `resolveExpressions`
+2. 同步路径在 `onMsg` 返回前 `tell*` 即可，框架自动 `complete`；异步路径必须对入站 `message` 调用 `context.complete()`。触发器的新消息不在 `onMsg` 内，必须且只 `complete` 一次（用于统计触发器的执行次数与耗时，重复调用会重复计数）；特殊触发器可按说明调整调用位置，但不能省略
+3. 在 `onMsg` 中求值的字段默认 `expression: true` + `droppable: true`（能否切换到表达式）。只在 `initialize()` 读取的参数（超时、cron、路由路径）不开。访问凭证和 `CodeEditor` 也除外：`CodeEditor` 设了会和编辑器交互冲突，只用 `typeOptions.enableExpression`；`lang` 为 `json` 时优先改用 `JsonExpressionInput`。代码侧 `dynamicParameters` + `resolveExpressions`
 4. 普通节点输出放 `output`；触发器 payload 放根级，并带 `triggerNodeId`、`eventId`、`workerId`
 5. 凭证类型 PascalCase；`credentialsType` 三处一致；`getCredentials` 用表单字段 `name`
-6. 已知错误用 `FlowNodeException`（含 `initialize` 参数校验）；触发器遵守
+6. 已知错误用 `FlowNodeException`，`initialize` 参数校验优先用 SDK 的 `Validator`。接口调用失败（HTTP 非 2xx 或业务码非 0）时用脚手架生成的 `HttpErrors.httpError` / `apiError`，把 `statusCode` 和脱敏后的 `body` 放进 `msg.error.metadata`；代码中的错误码都要写进 README「错误码」一节。触发器遵守
    `isTest()` / `createTriggerMessage(payload, eventId)` / `complete`（位置可按说明调整）/ `destroy()`。`eventId` 同时写入 payload，
    `triggerNodeId` 取 `getWorkflowNodeId()`，`workerId` 取 `getWorkerId()`
 7. 节点 `icon` 默认写 `"default.svg"`，需要自定义图标时再改文件名。不要在工程里生成 SVG，
@@ -130,5 +131,5 @@ Maven 依赖：`cn.buildify:buildify-bundle-api`（版本见 `templates/project/
 | 目录 | 内容 |
 |---|---|
 | `templates/project/` | `pom.xml`、`bundle.json`、README / CHANGELOG 骨架 |
-| `templates/java/` | Node / GenericApiNode / Trigger / Webhook / CredentialsProvider / MethodExecutor |
+| `templates/java/` | Node / GenericApiNode / Trigger / Webhook / CredentialsProvider / MethodExecutor，以及接口失败处理 `HttpErrors`（生成到 `support/`） |
 | `templates/forms/` | 节点 / 通用调用 / 触发器 / Webhook / 凭证 properties JSON |

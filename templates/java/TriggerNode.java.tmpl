@@ -68,7 +68,8 @@ public class {{NODE_NAME}} implements FlowNode {
             try {
                 context.tellSuccess(triggered);
             } finally {
-                // 必须 complete。特殊触发器可按说明把这次调用挪到真正结束处，但不能删除
+                // 必须且只调一次：记录触发器的执行次数、QPS 与耗时（框架不去重）。
+                // 特殊触发器可按说明挪到真正结束处，但不能删除
                 context.complete(triggered);
             }
         } catch (Exception e) {

@@ -25,7 +25,8 @@
       （框架在 `onMsg` 返回时自动收尾；本次 `onMsg` 未调用 `executeBlocking`）
 - [ ] 所有异步回调（`sendAsync` / `executeBlocking` / `nodeService().execute()`）在**每条**
       结束路径上都对**入站** `message` 调用了 `complete`；推荐用 `onComplete` 或 `finally` 统一收尾
-- [ ] 触发器对 `createTriggerMessage` 的新消息调用了 `context.complete`（框架不会自动收尾）。
+- [ ] 触发器对 `createTriggerMessage` 的新消息调用了 `context.complete`，且每条只调一次
+      （框架不会自动收尾，也不去重；漏调时触发器的执行次数、QPS、耗时恒为 0，重复调用会重复计数）。
       普通触发器紧接在 `tell*` 之后；特殊触发器可按说明调整位置，但不能省略
 - [ ] 含表达式的参数在 `initialize()` 存入 `dynamicParameters`，`onMsg()` 用
       `resolveExpressions` 解析
@@ -34,6 +35,14 @@
 - [ ] **非触发器**节点输出放入 payload 的 `output` 字段，不散落在根级
 - [ ] 已知错误使用 `FlowNodeException` 结构化，不直接 `throw new RuntimeException(...)` /
       `IllegalArgumentException(...)`
+- [ ] `initialize()` 的参数校验用 `Validator`（失败抛 `VALIDATION_ERROR`）；`onMsg` 中不用 `Validator`
+- [ ] 接口调用拿到响应但判定失败（HTTP 非 2xx 或业务码非 0）时走 `tellFailure`，用
+      `HttpErrors.httpError` / `apiError`（或等价的 `.with("statusCode", ...)` + `.with("body", ...)`）
+      带上状态码与**解析后的**响应体（进入 `msg.error.metadata`），错误码带厂商前缀
+- [ ] 写入 `error.metadata.body` 前已把 Token、密钥等字段替换为 `***`（`HttpErrors.redact`）
+- [ ] `getCredentials(...)` 用 try/catch 处理找不到凭证的情况（会抛异常，不会返回 null）
+- [ ] 已知失败（`FlowNodeException`、连接失败 / 超时）日志用 `warn`，未知异常用 `error` 并保留堆栈
+- [ ] 代码中出现的每个错误码都写进了 README「错误码」一节
 - [ ] `destroy()` 中释放所有资源，且实现幂等
 - [ ] 未使用已移除的旧事件 API：`sendRequestEvent` / `sendResponseEvent`、
       `RequestEvent` / `ResponseEvent`、`onRequestEvent` / `onResponseEvent`
@@ -42,8 +51,6 @@
 - [ ] 路由、cron、连接、连接池所用参数在变化时让 `isRestartRequired()` 返回 `true`
 - [ ] 对接三方 HTTP API 时包含以 `ApiCall` 结尾的通用调用节点。尚未实现的接口按厂商文档填
       `method` / `path` / `query` / `headers` / `body`，鉴权走凭证，README 保留「通用调用」一节
-- [ ] 🔍 `onFailure` 中日志分级：`FlowNodeException` 用 `warn`，未知异常用 `error` 并保留堆栈
-
 ## 触发器节点
 
 - [ ] 注解同时设置 `isTrigger = true, hasInput = false`
@@ -91,8 +98,12 @@
 - [ ] `CodeEditor` 存证书 / 纯文本时设了 `"enableExpression": false`（组件自身属性，与顶层 `expression` 无关）
 - [ ] 2～5 个互斥短文案用 `Segmented`；选项多、要搜索或远程加载时用 `Select`（`Segmented` 不支持 `loadOptions`）
 - [ ] 节点 / 触发器 / Webhook 表单中，可传值字段设了 `expression: true` 与 `droppable: true`
+- [ ] 只在 `initialize()` 中读取、未放进 `dynamicParameters` 的字段（超时、cron、时区、路由路径等）
+      **未**开 `expression` / `droppable`
 - [ ] `CredentialSelect`（访问凭证）未设 `expression`；`credentials/*.json` 也未开表达式
-- [ ] 可传值的 `CodeEditor` / `SqlEditor` / `JsonEditor` 同样设了顶层 `expression` 与 `droppable`（能否切换）；未把 `enableExpression` 写到其它组件上
+- [ ] 可传值的 `SqlEditor` / `JsonEditor` 同样设了顶层 `expression` 与 `droppable`（能否切换）；未把 `enableExpression` 写到 `CodeEditor` 以外的组件上
+- [ ] `CodeEditor` **未**设顶层 `expression` / `droppable`（与编辑器交互冲突），是否按表达式存储只看 `enableExpression`
+- [ ] 内容是 JSON 的字段用 `JsonExpressionInput`，未用 `CodeEditor`（`lang: "json"`）
 - [ ] 需要人工逐项填写的数组使用 `FixedCollection`（可增删），未用 `JsonEditor` 手写 JSON 数组
 - [ ] `FixedCollection` 的 `defaultValue` 包含 `options` 中所有子字段
 - [ ] 集合类子字段 `name` 不含父级路径前缀
@@ -143,6 +154,7 @@
 
 - [ ] `README.md` 含节点一览表格（名称、类型、说明）
 - [ ] 每个节点有参数说明和 JSON 输出字段示例
+- [ ] 含「错误码」一节，覆盖代码中出现的全部错误码（含义 + 排查建议）
 - [ ] 含构建命令（`mvn package`）与产物路径
 - [ ] 关键依赖以表格列出（含版本和 scope）
 - [ ] `CHANGELOG.md` 仅一节，标题版本与 `pom.xml` `<version>` 一致，正文为用户可见变更

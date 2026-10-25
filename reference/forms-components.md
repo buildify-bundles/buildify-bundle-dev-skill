@@ -53,12 +53,16 @@ Monaco 多语言编辑器，值为 `String`。
 
 存证书 / 私钥 / 固定脚本时**必须**显式设 `false`，否则后端拿到的值带 `=` 前缀，解析失败。
 
-顶层 `expression` 与 `enableExpression` 不是一回事，可以同时设置：
+`CodeEditor` **不要**设顶层 `expression` / `droppable`：表达式切换和拖放会与编辑器自身的
+交互冲突。是否按表达式存储只由 `enableExpression` 决定。
 
-| 字段 | 层级 | 作用 |
+| 字段 | 层级 | `CodeEditor` 上 |
 |---|---|---|
-| `expression` | 字段顶层，配 `droppable` | 这个控件能否在固定值与 `={{ msg.xxx }}` 之间切换 |
-| `enableExpression` | `typeOptions`，仅 `CodeEditor` | 编辑器内部把内容存成带 `=` 前缀的表达式，还是存原始文本 |
+| `expression` / `droppable` | 字段顶层 | **不设**（其它可传值控件默认开启） |
+| `enableExpression` | `typeOptions`，仅 `CodeEditor` | 按内容设置：含 `{{ }}` 用 `true`，证书 / 纯文本用 `false` |
+
+内容是 JSON 文档时**优先用 `JsonExpressionInput`**，不要用 `CodeEditor` + `lang: "json"`。
+`CodeEditor` 留给 JavaScript / Python / Java / HTML 脚本和证书等纯文本。
 
 ### SqlEditor
 
@@ -76,6 +80,7 @@ Monaco 多语言编辑器，值为 `String`。
 
 `JsonEditor` 存原始 JSON 字符串，不要往里塞表达式。
 `JsonExpressionInput` 在 JSON **字符串值**里用 `={{msg.xxx}}` 做整字段替换（保留类型）；混排写成 `"=[{{msg.a}}] {{msg.b}}"`。
+它是编辑 JSON 的首选控件，代替 `CodeEditor`（`lang: "json"`）。
 两者只用于自由结构的整份 JSON 文档。需要人逐项添加的数组改用 `FixedCollection`。
 编排器会把值规整为 `JsonValue` 树下发——服务端直接 `parameters.path("字段")` 放进
 `dynamicParameters` 即可，**不要**再 `JsonValueFactory.fromJson(...asText())`。

@@ -18,6 +18,7 @@
 - [HTTP 路由（Webhook）](#http-路由webhook)
 - [SandboxExecutor](#sandboxexecutor)
 - [FlowNodeException](#flownodeexception)
+- [Validator](#validator)
 
 ## FlowNode 接口
 
@@ -40,7 +41,8 @@ public interface FlowNode {
     /** isRestartRequired()=false 时调用，就地刷新轻量配置 */
     default void onParametersUpdated(Context context, JsonValue newParameters, JsonValue oldParameters) {}
 
-    /** 凭证变更；返回 true 表示已就地生效，false 时框架回退为重启节点 */
+    /** 凭证变更；type 为凭证类型标识，name 为用户设置的凭证实例名（不是表单字段 name）。
+     *  返回 true 表示已就地生效，false 时框架回退为重启节点 */
     default boolean onCredentialsUpdated(Context context, String type, String name) { return false; }
 
     /** 输出关系：读取类上的 @NodeRelations，未声明时为 [Success, Failure]。
@@ -55,8 +57,10 @@ public interface FlowNode {
 }
 ```
 
-> `support()` 返回 false 的消息不会进入 `onMsg()`，也就没有配对的 `complete()`，
-> 因此该方法内不要做副作用操作。
+> `support()` 返回 false 时消息不会进入 `onMsg()`，**也不是静默跳过**：框架回调消息的
+> `onFailure`、记一条 WARN，再抛出 `RuntimeException("msg is not support")`，消息也不会走 Failure 链路。
+> 只用它挡掉确实不该到达本节点的消息（如 `CONTENT_TYPE` 不匹配），方法内不要做副作用操作。
+> 需要"条件不满足就放行/分流"时，在 `onMsg` 里 `tellNext` 到对应关系。
 
 ## @FlowNodeDescription
 
@@ -84,7 +88,7 @@ context.tellNext(message, Set.of("A", "B"));       // 广播到多个关系
 context.tellFailure(message, throwable);
 // 同步：onMsg 返回前 tell* 即可，框架自动 complete
 // 异步：每条结束路径对入站 message 调用 context.complete(message)
-// 触发器：createTriggerMessage 的新消息不在 onMsg 内，必须 complete。特殊触发器可按说明调整位置
+// 触发器：createTriggerMessage 的新消息不在 onMsg 内，必须且只调一次 complete。特殊触发器可按说明调整位置
 ```
 
 ### 凭证
@@ -106,6 +110,19 @@ String type   = cred.getType();              // 凭证实现类型，由框架�
 ```
 
 同一节点有多个凭证框时（如机器人凭证 + 应用凭证），各自有独立 `name`，需分别调用。
+
+`getCredentials` **不会返回 null**：表单字段没有绑定凭证、或凭证已被删除时直接抛 `RuntimeException`。
+在 `onMsg` 中调用要捕获并转成结构化错误，不要写 `== null` 判断：
+
+```java
+Credentials cred;
+try {
+    cred = context.getCredentials("credentialsId");
+} catch (RuntimeException e) {
+    context.tellFailure(message, new FlowNodeException("MISSING_CREDENTIALS", "未选择访问凭证或凭证不存在", e));
+    return;
+}
+```
 
 ### 节点与工作流信息
 
@@ -179,8 +196,12 @@ JsonValue payload = JsonValueFactory.objectNode()
     .put("workerId", context.getWorkerId());           // 例：wkr-dk7s8awx；不适用时 null
 Message<JsonValue> msg = context.createTriggerMessage(payload, eventId);
 context.tellSuccess(msg);
-context.complete(msg); // 必须有。特殊触发器可按说明挪到真正结束处
+context.complete(msg); // 必须且只调一次。特殊触发器可按说明挪到真正结束处
 ```
+
+对触发器消息，`complete` 只记录触发器节点的执行次数、QPS，以及从创建消息到 `complete` 的耗时，
+不调用时这些指标恒为 0，但不会让流程卡住。框架不去重，重复调用会重复计数。
+SDK `Context.createTriggerMessage` 的 javadoc 示例只写了 `tellSuccess`，没有 `complete`，以本规范为准。
 
 `triggerNodeId`、`workerId` 在 `initialize()` 取出后复用；`eventId` 每次触发新生成。
 第二个参数与 payload 里的 `eventId` 必须是同一个值，这样消息头 `__correlationId` 与根级字段一致。
@@ -191,13 +212,10 @@ context.complete(msg); // 必须有。特殊触发器可按说明挪到真正结
 
 ### 响应时间统计
 
-`isAutoRecordResponseTime()` 定义在 **Context** 上（不是 FlowNode），默认 `true`：
-框架在 `complete()` 时按 `BEGIN_RUN_NANOS` 自动计算耗时。
+框架在 `complete()`（或同步路径自动收尾）时按 `BEGIN_RUN_NANOS` 自动计算耗时，节点无需处理。
 
-```java
-context.setAutoRecordResponseTime(false);            // 关闭自动统计
-context.recordResponseTime(elapsedMillis);           // 手动记录
-```
+`Context` 接口上虽然声明了 `setAutoRecordResponseTime(boolean)` 与 `recordResponseTime(long)`，
+但 Worker 的实现**没有覆写**这两个默认方法，调用后不生效。不要依赖它们关闭或手动记录耗时。
 
 ### 执行统计查询
 
@@ -237,7 +255,7 @@ public interface AsyncResult<T> {
 ## Message 与 MessageBuilder
 
 ```java
-// 触发器节点：eventId 同时写入 payload 和追踪 ID，必须 complete（位置可按说明调整）
+// 触发器节点：eventId 同时写入 payload 和追踪 ID，必须且只调一次 complete（位置可按说明调整）
 Message<JsonValue> msg = context.createTriggerMessage(payload, eventId);
 context.tellSuccess(msg);
 context.complete(msg);
@@ -270,16 +288,32 @@ Long   ts     = message.getHeaders().get(MessageHeaders.TIMESTAMP, Long.class);
 
 `MessageHeaders` 是只读 Map，`put`/`remove`/`clear` 抛 `UnsupportedOperationException`。
 
-### ErrorMessage
+### 失败消息的结构
 
-payload 为 `Throwable` 时 `MessageBuilder` 自动创建 `ErrorMessage`：
+`tellFailure(message, e)` **不会**产生 `ErrorMessage`。框架复制原 payload（不是 `JsonValue` 时用空对象），
+在根级写入 `error`，再以普通消息发往 Failure 链路（`MessageUtils.buildErrorMessage`）：
 
-```java
-if (message instanceof ErrorMessage err) {
-    Throwable cause    = err.getPayload();
-    Message<?> original = err.getOriginalMessage();
+```json
+{
+  "...": "原 payload 字段",
+  "error": {
+    "id": "uuid",
+    "code": "FlowNodeException.getCode()",
+    "message": "FlowNodeException.getMessage()",
+    "metadata": {
+      "...": "with(...) 写入的字段",
+      "env": "Production", "workflowId": "...", "workflowNodeId": "...",
+      "correlationId": "...", "workerId": "..."
+    }
+  }
 }
 ```
+
+不是 `FlowNodeException` 的异常会被包装，`code` 取异常类的简单名（如 `NullPointerException`），
+所以已知错误一定要用 `FlowNodeException`。`metadata` 原样拷贝，框架**不会**剔除敏感字段。
+`onMsg` 抛出的未捕获异常也会被框架 `tellFailure`，随后回调消息 `onFailure` 并重新抛出。
+
+`ErrorMessage` 只在 `MessageBuilder` 的 payload 本身是 `Throwable` 时出现，节点一般用不到。
 
 ## JsonValue
 
@@ -542,4 +576,54 @@ catch (InterruptedException e) {
     Thread.currentThread().interrupt();
     throw new FlowNodeException("HTTP_INTERRUPTED", "请求被中断", e);
 }
+
+// 拿到了响应但判定失败：脚手架生成的 support/HttpErrors 负责分类提示、剔除敏感字段，
+// 并把 statusCode 与解析后的 body 放进 metadata
+context.tellFailure(message, HttpErrors.httpError(response.statusCode(), response.body()));
+context.tellFailure(message, HttpErrors.apiError("40035", errmsg, status, body));  // 业务码失败
 ```
+
+`tellFailure` 会在原 payload 上写入 `error`，`with(...)` 的内容进入 `error.metadata`，
+框架另外补 `env`、`workflowId`、`workflowNodeId`、`correlationId`、`workerId` 与 `error.id`：
+
+```json
+"error": {
+  "code": "DINGTALK_HTTP_ERROR",
+  "message": "请求无效（HTTP 400），请检查消息内容。响应：{\"errcode\":40035,\"errmsg\":\"...\"}",
+  "metadata": { "statusCode": 400, "body": { "errcode": 40035, "errmsg": "..." } }
+}
+```
+
+完整约定（何时写、`code` 命名、敏感字段处理）见 `coding-rules.md` 规范 6。
+
+SDK 的 `cn.buildify.bundle.api.http.HttpFailure.toException()` 描述的是**入站**路由失败
+（Webhook 鉴权、方法不允许等），它写入的键是 `status`、`path`、`requestId`。
+**出站**调用三方接口失败一律用 `statusCode` / `body`，与成功输出的 `output.statusCode` 对齐，不要混用。
+
+## Validator
+
+`cn.buildify.bundle.api.validation.Validator`：在 `initialize()` 中链式校验参数，失败时抛
+`FlowNodeException("VALIDATION_ERROR", message)`，`metadata` 带 `field` 与 `constraint`，节点不会带着错误配置启动。
+
+```java
+String url = Validator.of(parameters.path("url").asText(""), "url")
+        .notBlank("url 不能为空")
+        .matches("^(=|https?://).*", "url 必须以 http(s):// 开头")
+        .get();
+
+int timeout = Validator.of(parameters.path("timeout").asInt(30), "timeout")
+        .range(1, 300, "timeout 必须在 1~300 秒之间")
+        .get();
+```
+
+| 方法 | 说明 |
+|---|---|
+| `of(value)` / `of(value, fieldName)` | 创建；`fieldName` 写入 `metadata.field` |
+| `notNull` / `notBlank` / `notEmpty` | 非空校验（字符串、集合） |
+| `matches(regex, msg)` | 字符串正则 |
+| `min` / `max` / `range` | 数值范围 |
+| `must(predicate, msg)` | 自定义条件 |
+| `get()` / `orElse(default)` | 取值 |
+
+只在 `initialize()` 中用。`onMsg` 里抛出会被框架当作未捕获异常处理，按消息求值的参数应自己判断后
+`tellFailure`。

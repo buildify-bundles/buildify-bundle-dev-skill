@@ -90,9 +90,9 @@ schema。后端原样透传，由前端 `ParameterInputList` 遍历 `properties`
 │   ├─ 含模板变量的字符串     → ExpressionInput（或 Input + "expression": true）
 │   └─ 长文本/代码
 │       ├─ SQL              → SqlEditor（#{msg.xxx} / ${msg.xxx}，禁止 {{ }}）
-│       ├─ JS/Python/Java   → CodeEditor（typeOptions.lang）
-│       ├─ JSON 文档（自由结构） → JsonEditor
-│       ├─ JSON 文档含表达式   → JsonExpressionInput
+│       ├─ JS/Python/Java   → CodeEditor（typeOptions.lang，不设 expression/droppable）
+│       ├─ JSON 文档         → JsonExpressionInput（优先，不用 CodeEditor lang:"json"）
+│       ├─ JSON 文档且不含表达式 → JsonEditor
 │       └─ 证书/纯文本       → CodeEditor（lang:"text" + enableExpression:false）
 ├─ 数字                      → InputNumber ／ 有界调节 → Slider
 ├─ 布尔                      → Switch
@@ -165,11 +165,16 @@ schema。后端原样透传，由前端 `ParameterInputList` 遍历 `properties`
 | `CredentialSelect`（访问凭证） | **不要**设 `expression`。选的是已保存的凭证实例，不按消息求值 |
 | `ExpressionInput` | 强制表达式模式，值始终带 `=` 前缀，不必再写 `expression` |
 | `JsonExpressionInput` | 内置 `={{ }}`，不必再写顶层 `expression` |
-| `CodeEditor` / `SqlEditor` / `JsonEditor` | 与其它可传值字段一样设顶层 `expression` + `droppable`，表示能否整段切换成 `={{ msg.xxx }}`。`enableExpression` 只属于 `CodeEditor` 的 `typeOptions`，控制编辑器内部是否按表达式存储，不能用来代替顶层 `expression` |
+| `SqlEditor` / `JsonEditor` | 与其它可传值字段一样设顶层 `expression` + `droppable`，表示能否整段切换成 `={{ msg.xxx }}` |
+| `CodeEditor` | **不要**设顶层 `expression` / `droppable`，会与编辑器交互冲突。是否按表达式存储只看 `typeOptions.enableExpression`。`lang` 为 `json` 时优先改用 `JsonExpressionInput` |
 | `BooleanExpressionInput` | 值**不带** `=` 前缀，直接是表达式字符串 |
 | `TestButton` / `Space` / `Tag` | 不产生参数，不要设 `expression` |
 
 凭证表单 `credentials/*.json`（主机、密钥等）在保存时入库，不按消息求值，**不要**开 `expression`。
+
+只在 `initialize()` 中读取、没有放进 `dynamicParameters` 的字段（超时、cron、时区、Webhook 路径、
+连接池大小等）同样**不要**开 `expression` / `droppable`：节点初始化时读一次，表达式不会被求值。
+`validate_bundle.py` 会对照节点代码找出这类字段。
 
 ## 6. 访问凭证字段
 
@@ -347,13 +352,14 @@ schema。后端原样透传，由前端 `ParameterInputList` 遍历 `properties`
 | 7 | `provider=credentials` 却写 `credentialsRef` | 该模式不用此字段，改用 `credentialsType` |
 | 8 | `RelationCollection` 在 `options` 定义 `_id` | `_id` 由组件自动生成 |
 | 9 | `trigger:"auto"` 但 `dependsOn` 含可选字段 | 改 `"manual"` |
-| 10 | 用顶层 `expression` 代替 `CodeEditor` 的 `enableExpression`，或反过来 | 顶层 `expression` 控制能否切换到表达式模式；`enableExpression` 只决定编辑器内容是否带 `=` 前缀。证书/纯文本必须 `"enableExpression": false`，需要整段传入 `={{ msg.xxx }}` 时另设 `expression` |
-| 11 | 存证书用 `CodeEditor` 未设 `enableExpression: false` | 必须 `"enableExpression": false`，否则值带 `=` 前缀。这与顶层 `expression` 无关 |
+| 10 | `CodeEditor` 设了顶层 `expression` / `droppable` | 与编辑器交互冲突，删掉；是否按表达式存储只用 `typeOptions.enableExpression` |
+| 11 | 存证书用 `CodeEditor` 未设 `enableExpression: false` | 必须 `"enableExpression": false`，否则值带 `=` 前缀 |
 | 12 | 用了 `loadOptions` 却无 `allow-create`/`clearable` | 远程失败时用户完全无法配置 |
 | 13 | `provider=bundle` 省略 `dependsOn` | 必须显式写出，无依赖写 `[]` |
 | 14 | 字段用 `type` 而非 `uiComponent` | 一律 `uiComponent` |
 | 15 | 省略 `icon`，或在工程里生成 SVG | 默认写 `"icon": "default.svg"`；要自定义再改文件名。SVG 由平台上传，不打进 JAR |
-| 16 | 可传值字段省略 `expression` | 默认 `"expression": true` 与 `"droppable": true`，否则无法写入 `={{ msg.xxx }}` |
+| 16 | 可传值字段省略 `expression` | 默认 `"expression": true` 与 `"droppable": true`，否则无法写入 `={{ msg.xxx }}`（`CodeEditor` 除外） |
 | 17 | `CredentialSelect` 设了 `expression: true` | 访问凭证不要开表达式 |
 | 18 | 数组让用户手写 JSON | 用 `FixedCollection`，界面可动态添加项 |
 | 19 | `Segmented` 写了 `loadOptions`，或选项超过 5 个 | 只做静态单选；选项多、要搜索或远程加载时改用 `Select` |
+| 20 | JSON 内容用 `CodeEditor` + `lang: "json"` | 优先用 `JsonExpressionInput` |

@@ -18,6 +18,7 @@
 | **项目结构** | 目录树，标注各文件职责 |
 | **构建** | `mvn package` 命令及产物路径 |
 | **依赖** | 表格列出关键依赖、版本和 scope |
+| **错误码** | 表格列出代码中出现的每个错误码：错误码、含义、排查建议（`FlowNodeException` 约定，校验脚本会对照检查） |
 | **技术说明** | 设计要点（连接管理、异步模型、重连策略等） |
 
 输出字段示例必须是 JSON 代码块。普通节点带 `output` 包裹，触发器不带：
@@ -29,6 +30,18 @@
 { "output": { "statusCode": 200, "body": "..." } }
 ```
 ````
+
+调用三方接口的节点还要写出失败时的 `msg.error` 示例，说明 `metadata.statusCode` 与 `metadata.body`。
+
+错误码表示例（`Validator` 校验失败统一是 `VALIDATION_ERROR`；带业务码的写成 `<前缀>_API_<业务码>` 一行即可）：
+
+```markdown
+| 错误码 | 含义 | 排查建议 |
+|--------|------|----------|
+| `DINGTALK_HTTP_ERROR` | 接口返回非 2xx | 查看 `metadata.statusCode` 与 `metadata.body` |
+| `DINGTALK_API_<业务码>` | HTTP 2xx 但返回业务错误码 | 对照钉钉错误码文档 |
+| `HTTP_IO_ERROR` | 连接失败或超时 | 检查网络与超时设置 |
+```
 
 引用规范：节点参数名、字段名用反引号；表达式按组件写（JSON `={{msg.xxx}}`，
 SQL `#{msg.xxx}` / `${msg.xxx}`，文本 `{{msg.xxx}}`）；占位名统一用 `msg`，**不要**用 `$json`。

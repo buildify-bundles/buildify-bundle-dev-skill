@@ -24,6 +24,9 @@
 String url   = parameters.path("url").asText(null);
 int timeout  = parameters.path("timeout").asInt(30);
 boolean flag = parameters.path("enabled").asBoolean(false);
+
+// initialize() 中的必填 / 范围校验用 Validator，失败抛 FlowNodeException("VALIDATION_ERROR")
+int checked = Validator.of(timeout, "timeout").range(1, 300, "timeout 必须在 1~300 秒之间").get();
 ```
 
 ## 规范 2：异步路径必须 `context.complete`，同步路径框架自动收尾
@@ -59,17 +62,29 @@ httpClient.sendAsync(request, BodyHandlers.ofString()).whenComplete((resp, err) 
 ```
 
 触发器发出的是 `createTriggerMessage` 的新消息，不是 `onMsg` 的入站消息。
-框架不会自动收尾，必须对**这条新消息**调用 `context.complete`，否则本次触发无法结束。
+框架不会自动收尾，必须对**这条新消息**调用 `context.complete`，**每条消息只调一次**。
+
+对触发器消息，`complete` 只做指标记录：给触发器节点记一次执行（执行次数、QPS），并记录从
+`createTriggerMessage` 到 `complete` 的耗时。省略时这些指标恒为 0，试跑面板上触发器的耗时也不准；
+下游流程照常执行，不会因此卡住。框架**不去重**，同一条消息调用两次会重复计数，推荐写在 `finally` 里。
+
 普通触发器在 `tellSuccess` / `tellNext` / `tellFailure` 之后立刻调用。特殊触发器按自身说明
-把 `complete` 挪到真正结束的位置（例如等待回执、批量刷出、异步回调结束），但不能省略。
+把 `complete` 挪到真正结束的位置（例如等待回执、批量刷出、异步回调结束），这样记录的耗时才包含
+这段等待，但不能省略。
 
 ## 规范 3：`dynamicParameters` + `resolveExpressions`
 
 节点表单里，除访问凭证（`CredentialSelect`）外，可传值字段默认
 `"expression": true` 与 `"droppable": true`。`expression` 表示这个控件能否在固定值和
-`={{ msg.xxx }}` 之间切换，`CodeEditor` / `SqlEditor` / `JsonEditor` 也一样。
-`CodeEditor` 的 `typeOptions.enableExpression` 是编辑器自己的属性，决定内容是否带 `=` 前缀存储，
-不能用来代替顶层 `expression`。访问凭证和 `credentials/*.json` 不要开 `expression`。
+`={{ msg.xxx }}` 之间切换，`SqlEditor` / `JsonEditor` 也一样。
+这条默认只适用于放进 `dynamicParameters`、在 `onMsg` 中求值的字段。
+只在 `initialize()` / `isRestartRequired()` 中读取的参数（超时、cron、时区、路由路径、连接池大小等）
+**不要**开 `expression` / `droppable`：它们在初始化时读一次，`={{ msg.xxx }}` 不会被求值，
+`asInt(30)` 之类会静默落回默认值。确实需要按消息变化时，把它放进 `dynamicParameters`。
+`CodeEditor` 例外：**不要**设 `expression` / `droppable`，它们和编辑器自身的交互冲突。
+`CodeEditor` 是否按表达式存储只由 `typeOptions.enableExpression` 决定（内容是否带 `=` 前缀）。
+要编辑的内容是 JSON（`lang: "json"`）时优先改用 `JsonExpressionInput`。
+访问凭证和 `credentials/*.json` 不要开 `expression`。
 
 需要人逐项填写的数组（请求头、标签、收件人等）用 `FixedCollection`，值是 JSON 数组，
 用 `parameters.path("headers")` 遍历元素。不要用 `JsonEditor` 让用户手写 JSON 数组。
@@ -123,7 +138,7 @@ JsonValue payload = JsonValueFactory.objectNode()
     .put("cron", cronExpr).put("timestamp", System.currentTimeMillis());
 Message<JsonValue> triggered = context.createTriggerMessage(payload, eventId);
 context.tellSuccess(triggered);
-context.complete(triggered);   // 必须有。特殊触发器可按说明挪到真正结束处
+context.complete(triggered);   // 必须且只调一次：记录触发器的执行次数与耗时。特殊触发器可挪到真正结束处
 
 // ❌ 触发器不要包 output
 JsonValue bad = JsonValueFactory.objectNode().put("output", payload);
@@ -159,13 +174,82 @@ context.getCredentials("MysqlCredential");      // ❌ 凭证类型标识
 ## 规范 6：已知错误用 `FlowNodeException`
 
 禁止 `throw new RuntimeException(...)` / `IllegalArgumentException(...)`（含 `initialize()`
-里的参数校验）。`onFailure` 中分级：`FlowNodeException` 用 `log.warn`，其余用 `log.error`
-保留堆栈。日志前缀统一 `[NodeName]`。禁止把凭证字段写入日志或 payload。
+里的参数校验）。`initialize()` 中的参数校验优先用 SDK 的 `Validator`，失败时自动抛
+`FlowNodeException("VALIDATION_ERROR")`（见 `reference/api.md`）。
+
+日志分级：`FlowNodeException`、连接失败 / 超时这类已知错误用 `log.warn`（不打堆栈），
+其余未知异常用 `log.error` 保留堆栈。日志前缀统一 `[NodeName]`。禁止把凭证字段写入日志或 payload。
+
+不是 `FlowNodeException` 的异常会被框架包装，`error.code` 变成异常类名（如 `NullPointerException`），
+下游无法按错误码分支，所以已知错误一定要结构化。
 
 ```java
 throw new FlowNodeException("API_ERROR_" + code, "API 调用失败: " + apiMsg)
     .with("code", code).with("message", apiMsg);
 ```
+
+代码里出现的每个错误码都要写进 README 的「错误码」一节（含义 + 排查建议），
+`validate_bundle.py` 会对照检查。
+
+### 接口调用失败：响应放进 `error.metadata`
+
+调用三方接口拿到了响应、但判定为失败时（HTTP 非 2xx，或业务码如 `errcode` / `code` 非 0），
+必须 `tellFailure` 一个 `FlowNodeException`，并用 `with` 带上：
+
+| metadata 键 | 内容 |
+|---|---|
+| `statusCode` | HTTP 状态码（`int`） |
+| `body` | 响应体，能解析成 JSON 时放解析后的 `JsonValue`，否则放 `{ "raw": "<原始文本>" }`，与成功输出的 `body` 同一形态 |
+
+`code` 用 `<厂商>_HTTP_ERROR`（HTTP 非 2xx）或 `<厂商>_API_<业务码>`（HTTP 2xx 但业务失败）。
+`message` 先写按状态码分类的中文提示，再附 `响应：<原始响应体>`，响应体过长时截断（约 500 字符）。
+响应里的 Token、密钥等字段必须先替换成 `***` 再写入：框架会原样拷贝 `metadata`，不做脱敏。
+连接失败、超时等没有响应的错误不写 `statusCode` / `body`。
+
+脚手架会生成 `support/HttpErrors.java`，统一做这几件事，节点里直接调用，不要每个节点各写一份：
+
+| 方法 | 作用 |
+|---|---|
+| `HttpErrors.PREFIX` | 厂商前缀，由 `--error-prefix` 或 `artifactId` 推导（如 `DINGTALK`） |
+| `isSuccess(status)` | 是否 2xx |
+| `parseBody(raw)` | 解析响应，非 JSON 时返回 `{ "raw": "..." }` |
+| `httpError(status, raw)` | 生成 `<PREFIX>_HTTP_ERROR`，带分类提示、脱敏后的 `statusCode` / `body` |
+| `apiError(code, msg, status, body)` | 生成 `<PREFIX>_API_<code>`，同样带 `statusCode` / `body` |
+| `hint(status)` / `redact(json)` / `abbreviate(text, max)` | 单独使用的分类提示、脱敏、截断 |
+
+```java
+int status = response.statusCode();
+if (!HttpErrors.isSuccess(status)) {
+    context.tellFailure(message, HttpErrors.httpError(status, response.body()));
+    return;
+}
+JsonValue body = HttpErrors.parseBody(response.body());
+if (body.path("errcode").asInt(0) != 0) {
+    context.tellFailure(message, HttpErrors.apiError(
+            body.path("errcode").asText(), body.path("errmsg").asText(""), status, body));
+    return;
+}
+```
+
+键名固定为 `statusCode`，与成功输出的 `output.statusCode` 对齐。SDK 的 `HttpFailure.toException()`
+用的是 `status`，它描述的是 Webhook 等**入站**路由失败，和这里的**出站**调用不是一回事，不要照搬。
+
+`tellFailure` 后下游拿到的 `msg.error`（框架还会在 `metadata` 中补 `env`、`workflowId`、
+`workflowNodeId`、`correlationId`、`workerId` 和 `error.id`）：
+
+```json
+"error": {
+  "code": "DINGTALK_HTTP_ERROR",
+  "message": "请求无效（HTTP 400），请检查消息内容。响应：{\"errcode\":40035,\"errmsg\":\"...\"}",
+  "metadata": {
+    "statusCode": 400,
+    "body": { "errcode": 40035, "errmsg": "..." }
+  }
+}
+```
+
+下游用 `={{ msg.error.metadata.statusCode }}`、`={{ msg.error.metadata.body.errcode }}` 取值。
+不要把响应只拼进 `message` 而不放进 `metadata`，也不要把 `body` 存成 JSON 字符串。
 
 ## 规范 7：参数变更必须重启或热更新
 
@@ -205,7 +289,8 @@ public void onParametersUpdated(Context context, JsonValue newParameters, JsonVa
 2. 每条消息必须用 `context.createTriggerMessage(payload, eventId)` 创建。payload 根级写
    `triggerNodeId`（`getWorkflowNodeId()`）、`eventId`（本次触发 UUID；有外部追踪 ID 时用它）、
    `workerId`（`getWorkerId()`，不适用时 `null`）。`eventId` 就是第二个参数，与 `__correlationId` 相同。
-   必须 `context.complete` 这条新消息。普通触发器紧接在 `tell*` 之后；特殊触发器可按说明调整位置，但不能省略。
+   必须 `context.complete` 这条新消息，且只调一次（用于统计触发器的执行次数、QPS 与耗时，重复调用会重复计数）。
+   普通触发器紧接在 `tell*` 之后；特殊触发器可按说明调整位置，但不能省略。
 3. `destroy()` 中取消定时任务、注销 HTTP 路由。注解必须同时设 `isTrigger=true, hasInput=false`。
 
 ## 命名一致性（最常见的低级错误）

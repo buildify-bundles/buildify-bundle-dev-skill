@@ -3,7 +3,6 @@ package {{PACKAGE}}.nodes;
 import cn.buildify.bundle.api.Context;
 import cn.buildify.bundle.api.FlowNode;
 import cn.buildify.bundle.api.FlowNodeDescription;
-import cn.buildify.bundle.api.FlowNodeException;
 import cn.buildify.bundle.api.http.HttpMethod;
 import cn.buildify.bundle.api.http.Route;
 import cn.buildify.bundle.api.http.RoutingContext;
@@ -11,10 +10,12 @@ import cn.buildify.bundle.api.json.JsonValue;
 import cn.buildify.bundle.api.json.JsonValueFactory;
 import cn.buildify.bundle.api.message.Message;
 import cn.buildify.bundle.api.status.NodeStatus;
+import cn.buildify.bundle.api.validation.Validator;
 import lombok.extern.slf4j.Slf4j;
 
 import java.util.Set;
 import java.util.UUID;
+import java.util.regex.Pattern;
 
 @Slf4j
 @FlowNodeDescription(
@@ -24,6 +25,8 @@ import java.util.UUID;
         hasInput = false)
 public class {{NODE_NAME}} implements FlowNode {
 
+    private static final Pattern REQUEST_ID = Pattern.compile("[A-Za-z0-9._:-]{1,128}");
+
     private Route route;
     private String triggerNodeId;
     private String workerId;
@@ -32,10 +35,9 @@ public class {{NODE_NAME}} implements FlowNode {
     public void initialize(Context context, JsonValue parameters) {
         this.triggerNodeId = context.getWorkflowNodeId();
         this.workerId = context.getWorkerId();
-        String path = parameters.path("path").asText(null);
-        if (path == null || path.isBlank()) {
-            throw new FlowNodeException("MISSING_PATH", "path 不能为空");
-        }
+        String path = Validator.of(parameters.path("path").asText(""), "path")
+                .notBlank("path 不能为空")
+                .get();
 
         this.route = Route.create(Set.of(HttpMethod.POST), path)
                 .timeout(parameters.path("timeout").asInt(5000))
@@ -61,10 +63,10 @@ public class {{NODE_NAME}} implements FlowNode {
         try {
             String body = rc.request().body();
             String requestId = rc.request().getHeader("X-Request-Id");
-            // 有外部追踪 ID 就用它，否则每次请求生成一个。与消息头 __correlationId 相同。
-            String eventId = requestId == null || requestId.isBlank()
-                    ? UUID.randomUUID().toString()
-                    : requestId;
+            // 外部追踪 ID 合法时沿用，否则每次请求生成一个。与消息头 __correlationId 相同。
+            String eventId = requestId != null && REQUEST_ID.matcher(requestId).matches()
+                    ? requestId
+                    : UUID.randomUUID().toString();
 
             // 触发器 payload 直接放根级业务字段，禁止再包一层 output
             JsonValue payload = JsonValueFactory.objectNode()
@@ -78,7 +80,8 @@ public class {{NODE_NAME}} implements FlowNode {
             try {
                 context.tellSuccess(msg);
             } finally {
-                // 必须 complete。特殊触发器可按说明把这次调用挪到真正结束处，但不能删除
+                // 必须且只调一次：记录触发器的执行次数、QPS 与耗时（框架不去重）。
+                // 特殊触发器可按说明挪到真正结束处，但不能删除
                 context.complete(msg);
             }
 
@@ -87,8 +90,9 @@ public class {{NODE_NAME}} implements FlowNode {
                     .write("{\"code\":200,\"msg\":\"success\"}")
                     .end();
         } catch (Exception e) {
+            // 详细原因只写日志，不回传给调用方
             log.error("[{{NODE_NAME}}] 处理请求失败", e);
-            rc.fail(500, e.getMessage());
+            rc.fail(500, "处理请求失败");
         }
     }
 

@@ -49,13 +49,26 @@ python3 <skill-root>/scripts/scaffold_bundle.py \
 
 ## 输出
 
-成功（含 HTTP 4xx / 5xx）走 Success：
+HTTP 2xx 走 Success：
 
 ```json
 { "output": { "statusCode": 200, "body": {} } }
 ```
 
 下游用 `={{ msg.output.statusCode }}` 与 `={{ msg.output.body }}`。
-连接失败、超时、地址无效走 Failure，这时通常没有 `msg.output.statusCode`。
+
+HTTP 非 2xx 走 Failure，状态码和解析后的响应体放在 `msg.error.metadata`：
+
+```json
+"error": {
+  "code": "DEMO_HTTP_ERROR",
+  "message": "请求无效（HTTP 400），请检查请求参数。响应：{\"errcode\":40035,\"errmsg\":\"...\"}",
+  "metadata": { "statusCode": 400, "body": { "errcode": 40035, "errmsg": "..." } }
+}
+```
+
+下游用 `={{ msg.error.metadata.statusCode }}` 与 `={{ msg.error.metadata.body }}`。
+错误码前缀来自脚手架的 `--error-prefix`（默认由 `artifactId` 推导），响应里的 Token、密钥等字段已替换为 `***`。
+连接失败、超时、地址无效同样走 Failure，这时 `metadata` 中没有 `statusCode` / `body`。
 
 脚手架写入的 README「通用调用」一节要保留。编排时 Agent 靠这一节和节点表单决定怎么填，不要改字段名。

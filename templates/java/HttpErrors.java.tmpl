@@ -1,0 +1,126 @@
+package {{PACKAGE}}.support;
+
+import cn.buildify.bundle.api.FlowNodeException;
+import cn.buildify.bundle.api.json.JsonValue;
+import cn.buildify.bundle.api.json.JsonValueFactory;
+
+import java.util.Iterator;
+import java.util.Locale;
+import java.util.Map;
+import java.util.Set;
+
+/**
+ * 三方接口失败的统一处理：响应解析、分类提示、敏感字段剔除，以及写入 msg.error.metadata 的异常。
+ */
+public final class HttpErrors {
+
+    /** 错误码前缀，如 DINGTALK → DINGTALK_HTTP_ERROR / DINGTALK_API_40035 */
+    public static final String PREFIX = "{{ERROR_PREFIX}}";
+
+    private static final int MESSAGE_BODY_LIMIT = 500;
+    private static final String MASK = "***";
+
+    /** 键名去掉 _ 和 - 后按小写比较 */
+    private static final Set<String> SENSITIVE_KEYS = Set.of(
+            "token", "accesstoken", "refreshtoken", "idtoken",
+            "secret", "clientsecret", "appsecret",
+            "password", "passwd", "apikey", "authorization", "cookie");
+
+    private HttpErrors() {
+    }
+
+    public static boolean isSuccess(int status) {
+        return status >= 200 && status < 300;
+    }
+
+    /** 能解析成 JSON 时返回解析结果，否则返回 {@code {"raw": "<原文>"}} */
+    public static JsonValue parseBody(String body) {
+        if (body == null || body.isBlank()) {
+            return JsonValueFactory.objectNode();
+        }
+        try {
+            return JsonValueFactory.fromJson(body);
+        } catch (Exception e) {
+            return JsonValueFactory.objectNode().put("raw", body);
+        }
+    }
+
+    /** 按 HTTP 状态码给出可操作的中文提示 */
+    public static String hint(int status) {
+        if (status == 401 || status == 403) {
+            return "鉴权失败（HTTP " + status + "），请检查访问凭证。";
+        }
+        if (status == 404) {
+            return "接口不存在（HTTP 404），请检查请求地址。";
+        }
+        if (status == 429) {
+            return "请求过于频繁（HTTP 429），请稍后重试。";
+        }
+        if (status >= 500) {
+            return "服务端错误（HTTP " + status + "），请稍后重试。";
+        }
+        return "请求无效（HTTP " + status + "），请检查请求参数。";
+    }
+
+    public static String abbreviate(String text, int max) {
+        if (text == null) {
+            return "";
+        }
+        return text.length() <= max ? text : text.substring(0, max) + "...";
+    }
+
+    /** 返回剔除了敏感字段的副本，不修改入参 */
+    public static JsonValue redact(JsonValue value) {
+        if (value == null) {
+            return JsonValueFactory.objectNode();
+        }
+        JsonValue copy = value.deepCopy();
+        mask(copy);
+        return copy;
+    }
+
+    /** HTTP 非 2xx：{@code <PREFIX>_HTTP_ERROR}，metadata 带 statusCode 与 body */
+    public static FlowNodeException httpError(int status, String rawBody) {
+        JsonValue body = redact(parseBody(rawBody));
+        return new FlowNodeException(PREFIX + "_HTTP_ERROR",
+                hint(status) + "响应：" + abbreviate(describe(body), MESSAGE_BODY_LIMIT))
+                .with("statusCode", status)
+                .with("body", body);
+    }
+
+    /** HTTP 2xx 但业务码失败：{@code <PREFIX>_API_<code>}，metadata 同样带 statusCode 与 body */
+    public static FlowNodeException apiError(String apiCode, String apiMessage, int status, JsonValue body) {
+        JsonValue safe = redact(body);
+        return new FlowNodeException(PREFIX + "_API_" + apiCode,
+                "接口返回错误 [" + apiCode + "]：" + apiMessage
+                        + "。响应：" + abbreviate(describe(safe), MESSAGE_BODY_LIMIT))
+                .with("statusCode", status)
+                .with("body", safe);
+    }
+
+    private static String describe(JsonValue body) {
+        JsonValue raw = body.path("raw");
+        return body.isObject() && body.size() == 1 && raw.isTextual() ? raw.asText() : body.toJson();
+    }
+
+    private static void mask(JsonValue node) {
+        if (node.isObject()) {
+            for (Map.Entry<String, JsonValue> entry : node.properties().entrySet()) {
+                if (isSensitive(entry.getKey())) {
+                    node.put(entry.getKey(), MASK);
+                } else {
+                    mask(entry.getValue());
+                }
+            }
+        } else if (node.isArray()) {
+            for (Iterator<JsonValue> it = node.elements(); it.hasNext(); ) {
+                mask(it.next());
+            }
+        }
+    }
+
+    private static boolean isSensitive(String key) {
+        String normalized = key.replace("_", "").replace("-", "").toLowerCase(Locale.ROOT);
+        return SENSITIVE_KEYS.contains(normalized);
+    }
+}

@@ -102,8 +102,6 @@
       "name": "timeout",
       "label": "超时（秒）",
       "uiComponent": "InputNumber",
-      "expression": true,
-      "droppable": true,
       "hint": "更改超时后节点将自动重启",
       "typeOptions": {
         "min": 1,

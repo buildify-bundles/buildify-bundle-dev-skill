@@ -8,7 +8,9 @@
 
 把 [INSTALL.md](INSTALL.md) 交给 Agent。它只装到这次会话实际加载技能的目录；同时认出多个 Agent 时会停下来问路径，不会猜。Cursor 的个人目录是 `~/.cursor/skills/buildify-bundle-dev`。
 
-安装或更新完成后，重启 Agent 或新开对话，技能才会被识别。
+安装或更新完成后，重启 Agent 或新开对话，技能才会被识别。本地改过的技能文件会先 `git stash` 备份再更新。
+
+发布 Bundle 需要发布密钥：在控制台 **系统设置 → API Keys → buildify-publish-cli 密钥** 创建，首次发布时交给 Agent 即可。
 
 ## 做什么
 

@@ -119,7 +119,7 @@ pip install buildify-publish-cli      # 或 pipx / uv tool install
 `BUILDIFY_PUBLISH_JSON`、`BUILDIFY_PUBLISH_NO_PROMPT`、`NO_COLOR`。
 
 认证头 `Authorization: Bearer <keyId>.<secret>`。密钥在控制台当前工作空间的
-「工作空间设置 → 发布密钥」创建/轮换，CLI 不签发密钥。
+**系统设置 → API Keys → buildify-publish-cli 密钥** 创建/轮换，CLI 不签发密钥。
 
 配置文件 `~/.buildifyrc`（Windows 为 `%USERPROFILE%\.buildifyrc`），模式 `600`，
 与编排 CLI `buildify` 共用。发布密钥只写顶层遗留字段或 `[publish]`，**不**写入 `[openapi]`。
@@ -158,10 +158,20 @@ buildify-publish --json config profiles
 
 代用户发布时：
 
-- `missing_api_key`：向用户要该工作空间的 `keyId.secret`，再用上面的 stdin 命令 `add-profile`
+- `missing_api_key`：按下方模板向用户要密钥，拿到后用上面的 stdin 命令 `add-profile`，再 `key test`
 - `profile_required`：展示列表（无密钥），问一次，之后的命令都带 `--profile <name>`
 - 用户没有要求改这台机器的默认工作空间时，保持 `[publish].current` 不变
-- `workspace_key_missing`：向用户要 `.buildify-workspace` 里那个工作空间的密钥再 `add-profile`；上传使用与该 id 匹配的密钥
+- `workspace_key_missing`：按下方模板要 `.buildify-workspace` 里那个工作空间的密钥再 `add-profile`；上传使用与该 id 匹配的密钥
+- HTTP 401 / 403：密钥失效或被轮换，按下方模板请用户重新创建
+
+向用户要密钥时照这个说法，不要只说「请提供 API Key」：
+
+> 发布需要一把发布密钥。请在 Buildify 控制台切到要发布的工作空间，打开
+> **系统设置 → API Keys → buildify-publish-cli 密钥**，点创建（已有可直接复制），
+> 把完整密钥（形如 `keyId.secret`）发给我。我会通过 stdin 保存到本机 `~/.buildifyrc`，
+> 不会写进代码仓库或命令历史。
+
+拿到密钥后不要回显明文；`key test` 成功后告诉用户密钥对应的工作空间（`tenantId`），再继续上传。
 
 ### 退出码
 

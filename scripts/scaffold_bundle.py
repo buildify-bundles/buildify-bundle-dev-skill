@@ -502,16 +502,16 @@ def main() -> None:
               "".join(f"{args.package}.methods.{s.split(':', 1)[0]}\n" for s in args.method),
               args.force)
 
-    # 文档：使用文档.md 同步到平台；README.md 只给开发这个 Bundle 的人看
+    # 文档：docs.md 同步到平台；README.md 只给开发这个 Bundle 的人看
     first_node = node_specs[0][0]
-    usage = render("project/使用文档.md.tmpl", {
+    usage = render("project/docs.md.tmpl", {
         "NODE_ROWS": node_rows(args),
         "CREDENTIAL_SECTION": credential_section(args),
         "NODE_SECTIONS": node_sections(args, error_prefix),
         "GENERIC_API": generic_api_readme(args.generic_api) if args.generic_api else "",
         "ERROR_CODES": error_codes_table(args, error_prefix),
     })
-    write(root / "使用文档.md", usage, args.force)
+    write(root / "docs.md", usage, args.force)
     write(root / "README.md", render("project/README.md.tmpl", {
         "ARTIFACT_ID": args.artifact_id,
     }), args.force)
@@ -536,7 +536,7 @@ def main() -> None:
               "不要用无界队列缓存事件，见 reference/backpressure.md")
     if args.generic_api:
         print("     通用调用节点已生成：未实现的接口按厂商文档填 method/path/query/headers/body")
-    print("  4. 按节点补全 使用文档.md（平台用户使用文档，给用户和编排 Agent 看：何时使用、参数、输出路径、出口）"
+    print("  4. 按节点补全 docs.md（平台用户使用文档，给用户和编排 Agent 看：何时使用、参数、输出路径、出口）"
           "与 CHANGELOG.md；不要写项目结构、构建、ClassLoader。README.md 不上传到平台")
     print(f"  5. python3 {Path(__file__).parent / 'validate_bundle.py'} {root}")
     print("  6. mvn -q clean package")

@@ -29,7 +29,7 @@ Bundle 开发进度：
 - [ ] 3. 实现 FlowNode（遵守 coding-rules.md）
 - [ ] 4. 按需实现凭证 / MethodExecutor / Node Service
 - [ ] 5. 确认 META-INF/services/ 已注册实现类
-- [ ] 6. 编写 使用文档.md（平台用户使用文档：用户查看 + 编排 Agent 用节点）与 CHANGELOG.md
+- [ ] 6. 编写 docs.md（平台用户使用文档：用户查看 + 编排 Agent 用节点）与 CHANGELOG.md
 - [ ] 7. 校验 → 修复 → 重跑，直到 0 ERROR
 - [ ] 8. mvn clean package
 - [ ] 9. 检查源码仓库：没有 git 仓库或远程地址时，提示用户提供仓库地址
@@ -45,10 +45,10 @@ Bundle 开发进度：
 拿到地址后初始化、补 `.gitignore`、提交并推送；用户不提供就只提醒一次，不阻塞发布，
 不要自己创建远程仓库。细节见 [reference/publishing.md](reference/publishing.md#源码版本管理)。
 
-**发布时**：只同步用户使用文档 `使用文档.md`，不要同步 `README.md`。用户在软件包页查看，编排 Agent 用 `bundle doc` 阅读后编排节点。
+**发布时**：只同步用户使用文档 `docs.md`，不要同步 `README.md`。用户在软件包页查看，编排 Agent 用 `bundle doc` 阅读后编排节点。
 按本版本更新：适用、凭证类型、每个节点的何时使用 / 参数 / 输出路径 / 出口、错误码；不要写项目结构、
-构建、ClassLoader。校验通过后，在 `bundle upload` **之前** `bundle doc set --file 使用文档.md` 并
-`bundle doc get` 确认，再上传 JAR。发布已有软件包的新版本时**不查找、不上传图标**。章节约定见 [reference/publishing.md](reference/publishing.md#使用文档md每个-bundle-必须)。
+构建、ClassLoader。校验通过后，在 `bundle upload` **之前** `bundle doc set --file docs.md` 并
+`bundle doc get` 确认，再上传 JAR。发布已有软件包的新版本时**不查找、不上传图标**。章节约定见 [reference/publishing.md](reference/publishing.md#docsmd每个-bundle-必须)。
 
 **软件名称与软件描述**（控制台字段，对应 `--display-name` / `--summary`）：编排 Agent 只靠
 `bundle list -k` 命中后再读这两项决定用哪个包。建包前按已有节点起草，用确认表列出名称、描述、
@@ -71,7 +71,7 @@ Bundle 开发进度：
 | **节点间 RPC** | [reference/node-service-rpc.md](reference/node-service-rpc.md) |
 | **热更新 / ClassLoader 泄漏** | [reference/lifecycle.md](reference/lifecycle.md) |
 | **写触发器 / 防背压** | [reference/backpressure.md](reference/backpressure.md)（限流、有界缓冲、429、MQ nack） |
-| **写用户使用文档** | [reference/publishing.md](reference/publishing.md#使用文档md每个-bundle-必须)（`使用文档.md`；用户查看 + 编排 Agent 用节点） |
+| **写用户使用文档** | [reference/publishing.md](reference/publishing.md#docsmd每个-bundle-必须)（`docs.md`；用户查看 + 编排 Agent 用节点） |
 | **发布** | [reference/publishing.md](reference/publishing.md) |
 
 ## 工具脚本（执行，勿读源码）
@@ -117,7 +117,7 @@ python3 <skill-root>/scripts/validate_bundle.py ./my-bundle --strict  # WARNING 
 ```
 my-bundle/
 ├── pom.xml                          # buildify-bundle-api scope=provided；release=21；shade+SPI transformer
-├── 使用文档.md                      # 平台用户使用文档，发布时 doc set 同步；README.md 不上传
+├── docs.md                      # 平台用户使用文档，发布时 doc set 同步；README.md 不上传
 ├── README.md / CHANGELOG.md        # README 给开发者；CHANGELOG 给 releaseNote
 ├── icons/                           # 仅创建软件包时上传：cover.* 为封面，其余文件名 = 节点 icon 值；不打进 JAR
 └── src/main/

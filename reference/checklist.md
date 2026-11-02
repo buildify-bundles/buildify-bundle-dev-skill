@@ -12,7 +12,7 @@
 - [ ] 图标文件放在 Bundle 根目录 `icons/`，未放进 `src/main/resources`、未打进 JAR；`icons/` 下没有无人引用的图片
 - [ ] 🔍 创建软件包时，图标来自用户、厂商官网或图标站（Simple Icons / Iconify / svgl），不是自己画的；已向用户列出文件、用途和来源。发布新版本时不再查找或上传
 - [ ] `bundle.json` 的 `bundleName` 为 `命名空间/包名`，两段只含小写字母、数字和 `. _ -`
-- [ ] 模块根目录存在 `使用文档.md`（平台用户使用文档）与 `CHANGELOG.md`；`README.md` 不作为平台文档
+- [ ] 模块根目录存在 `docs.md`（平台用户使用文档）与 `CHANGELOG.md`；`README.md` 不作为平台文档
 
 ## FlowNode
 
@@ -163,7 +163,7 @@
 
 ## 使用文档 / CHANGELOG
 
-- [ ] `使用文档.md` 是平台用户使用文档（给用户和编排 Agent）：含适用、凭证、节点一览、每个节点一节、错误码。发布时同步这一份，不同步 `README.md`
+- [ ] `docs.md` 是平台用户使用文档（给用户和编排 Agent）：含适用、凭证、节点一览、每个节点一节、错误码。发布时同步这一份，不同步 `README.md`
 - [ ] 节点一览列出全部 `name`（编排用）、类型、何时使用
 - [ ] 每个节点一节标题是 `name`；有何时使用、参数表（字段名与表单一致、标明表达式）、输出 JSON 与下游引用路径、Success / Failure
 - [ ] 普通节点成功数据在 `output`；触发器 / Webhook payload 在根级，并写 `triggerNodeId` / `eventId` / `workerId`
@@ -190,7 +190,7 @@
 - [ ] 节点 `label` 是中文短名（不是类名），`summary` ≤ 10 字且不是「待补充」
 - [ ] 节点增删或对接范围变化时已 `bundle update --display-name / --summary`，使用文档标题和第一段与软件名称、软件描述一致
 - [ ] 仅新建软件包时：封面 `icons/cover.*` 随 `bundle create --icon` 上传（找不到图时用 `https://bundles.buildify.cn/icons/default.svg`），自定义图标已 `bundle icon upload`。发布新版本时不查找、不上传图标
-- [ ] `使用文档.md` 已按本版本更新，并在 `bundle upload` **之前** `bundle doc set --file 使用文档.md`，`bundle doc get` 确认已同步。没有把 `README.md` 传上去
+- [ ] `docs.md` 已按本版本更新，并在 `bundle upload` **之前** `bundle doc set --file docs.md`，`bundle doc get` 确认已同步。没有把 `README.md` 传上去
 
 ## 源码版本管理
 

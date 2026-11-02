@@ -40,7 +40,7 @@ BUNDLE_SEGMENT = re.compile(r"^[a-z0-9]+([._-][a-z0-9]+)*$")
 ICON_FILE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]*\.(png|jpe?g|gif|webp|svg)$")
 DEFAULT_ICON = "default.svg"
 COVER_STEM = "cover"
-USAGE_DOC = "使用文档.md"
+USAGE_DOC = "docs.md"
 ICON_MAX_BYTES = 1024 * 1024
 PARAM_FROM_JSON = re.compile(
     r"JsonValueFactory\s*\.\s*fromJson\(\s*\w*[pP]arameters\s*\.\s*path\([^;]*?\.\s*asText\(")
@@ -157,8 +157,8 @@ def check_pom(project: Path) -> None:
 
 def check_docs(project: Path) -> None:
     if not (project / USAGE_DOC).is_file():
-        err(USAGE_DOC, "每个 Bundle 必须在模块根目录提供使用文档.md（适用/凭证/节点一览/参数/输出/出口/错误码），"
-                      "发布时用 bundle doc set --file 使用文档.md 同步到平台，供用户和编排 Agent 阅读；"
+        err(USAGE_DOC, "每个 Bundle 必须在模块根目录提供 docs.md（适用/凭证/节点一览/参数/输出/出口/错误码），"
+                      "发布时用 bundle doc set --file docs.md 同步到平台，供用户和编排 Agent 阅读；"
                       "不要同步 README.md")
     changelog = project / "CHANGELOG.md"
     if not changelog.is_file():
@@ -632,7 +632,7 @@ def check_icon_files(project: Path, declared: dict) -> None:
 
 
 def check_readme_nodes(project: Path, declared: dict, credential_types: set) -> None:
-    """使用文档.md 会同步为平台用户使用文档，给用户和编排 Agent 看。"""
+    """docs.md 会同步为平台用户使用文档，给用户和编排 Agent 看。"""
     usage = project / USAGE_DOC
     if not usage.is_file():
         return

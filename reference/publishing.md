@@ -2,17 +2,17 @@
 
 ## 目录
 
-- [使用文档.md（每个 Bundle 必须）](#使用文档md每个-bundle-必须)
+- [docs.md（每个 Bundle 必须）](#docsmd每个-bundle-必须)
 - [CHANGELOG.md 与平台 releaseNote](#changelogmd-与平台-releasenote)
 - [buildify-publish CLI](#buildify-publish-cli)
 - [命名与图标](#命名与图标)（软件名称与软件描述见[发布流程](#软件名称与软件描述)）
 - [发布流程](#发布流程)
 - [源码版本管理](#源码版本管理)
 
-## 使用文档.md（每个 Bundle 必须）
+## docs.md（每个 Bundle 必须）
 
-放在模块根目录，文件名固定为 `使用文档.md`。这是平台上的**用户使用文档**。每次发布用
-`bundle doc set --file 使用文档.md` **整份**同步到平台，用户在软件包页阅读，编排 Agent
+放在模块根目录，文件名固定为 `docs.md`。这是平台上的**用户使用文档**。每次发布用
+`bundle doc set --file docs.md` **整份**同步到平台，用户在软件包页阅读，编排 Agent
 用 `bundle doc` 阅读后决定怎么用节点。
 
 `README.md` 只给开发这个 Bundle 的人看（构建、仓库说明）。**发布时不要** `doc set` README，
@@ -174,7 +174,7 @@ buildify-publish help
 | `bundle icon upload --name <ns/name> --icon-name <名> --file <图片>` | `POST /v1/bundles/icons` | 上传节点图标；同名覆盖 |
 | `bundle icon delete --name <ns/name> --icon-name <存储名>` | `DELETE /v1/bundles/icons` | 删除图标，名字**带扩展名** |
 | `bundle doc get --name <ns/name>` | `GET /v1/bundles/document` | 读取平台说明文档 |
-| `bundle doc set --name <ns/name> --file 使用文档.md` | `PUT /v1/bundles/document` | 用用户使用文档覆盖平台说明；空文件即清空。不要传 README.md |
+| `bundle doc set --name <ns/name> --file docs.md` | `PUT /v1/bundles/document` | 用用户使用文档覆盖平台说明；空文件即清空。不要传 README.md |
 | `bundle upload` | `POST /v1/bundles/versions` | 上传 JAR 版本（multipart），见下文 |
 | `config` | — | 读写 `~/.buildifyrc`，见下表 |
 
@@ -365,16 +365,16 @@ buildify-publish bundle icon delete --name acme/dingtalk --icon-name DingTalk.sv
 | 3 | 不存在时建包：按[找图](#找图)准备 `icons/`，再按下文「新建软件包」创建并上传封面和节点图标。这是唯一查找、上传图标的步骤 |
 | 4 | 读当前版本：`mvn -q -Dexpression=project.version -DforceStdout help:evaluate`，按 SemVer 修改 `pom.xml` 的 `<version>` |
 | 5 | 重写 `CHANGELOG.md`，仅本 bundle、本版本一节 |
-| 6 | 更新 `使用文档.md`（用户使用文档，给用户和编排 Agent）：对照本版本逐项改适用、凭证类型、每个节点的何时使用 / 参数 / 输出路径 / 出口、错误码。CHANGELOG 里提到的变化都要体现。不要改 README 来代替这份文档。节点增删或对接范围变了时，按[软件名称与软件描述](#软件名称与软件描述)重写，经用户确认后 `bundle update --display-name / --summary`，并同步使用文档标题和第一段 |
+| 6 | 更新 `docs.md`（用户使用文档，给用户和编排 Agent）：对照本版本逐项改适用、凭证类型、每个节点的何时使用 / 参数 / 输出路径 / 出口、错误码。CHANGELOG 里提到的变化都要体现。不要改 README 来代替这份文档。节点增删或对接范围变了时，按[软件名称与软件描述](#软件名称与软件描述)重写，经用户确认后 `bundle update --display-name / --summary`，并同步使用文档标题和第一段 |
 | 7 | `validate_bundle.py --strict` 0 ERROR / 0 WARNING（含使用文档的节点与错误码、图标文件检查），再构建：`mvn -q clean package`（monorepo 用 `mvn -pl <artifact> -am clean package -DskipTests`，**必须含 `clean`**） |
-| 8 | **先同步用户使用文档**：`bundle doc set --file 使用文档.md`，再用 `bundle doc get` 确认平台上是本次内容。不要传 `README.md` |
+| 8 | **先同步用户使用文档**：`bundle doc set --file docs.md`，再用 `bundle doc get` 确认平台上是本次内容。不要传 `README.md` |
 | 9 | `bundle upload`，必须带 `--release-notes-file` |
 | 10 | `bundle info` 核对版本、releaseNote 与 latest 标记 |
 
 必须先 `clean` 再 `package`，避免旧 JAR / 过时 class 混入发布产物。
 
 文档在上传 JAR 之前同步，用户和编排 Agent 拿到新版本时看到的已经是对应内容。第 9 步失败时修复后重传即可；
-决定放弃这次发布时，用上一版使用文档（`git show <上次发布的提交>:使用文档.md > /tmp/使用文档.prev.md`）
+决定放弃这次发布时，用上一版使用文档（`git show <上次发布的提交>:docs.md > /tmp/docs.prev.md`）
 再执行一次 `doc set` 回退，不要让平台文档描述一个不存在的版本。
 
 ### 新建软件包
@@ -471,7 +471,7 @@ buildify-publish --json bundle create --namespace acme --name dingtalk-robot \
 - 只写当前版本**已经有**的节点能力，不写计划中的功能
 - 中文名、英文名、别名、动作、场景这些搜包关键词，必须出现在名称或描述里，否则 `-k` 搜不到
 - 不写营销词（强大、便捷、一站式、高效），不写实现细节（Java、Vert.x、fat JAR、SDK 版本）
-- 不写用法、参数、错误码，这些在 `使用文档.md` 里
+- 不写用法、参数、错误码，这些在 `docs.md` 里
 
 | | 软件名称 | 软件描述 |
 |---|---|---|
@@ -519,11 +519,11 @@ CI 用 `BUILDIFY_PUBLISH_API_KEY`（忽略本机 profile）或 `BUILDIFY_PUBLISH
 ```bash
 buildify-publish bundle update --name official/wecom-bot --display-name '企业微信群机器人' \
   --summary '对接企业微信（WeCom）群机器人 Webhook：向群聊发送文本、Markdown、图片、图文和模板卡片消息，支持 @ 成员。用于告警通知、日报推送。不含应用消息与通讯录（请用「企业微信应用消息」）。'
-buildify-publish bundle doc set --name official/wecom-bot --file ./bundle-wecom-bot/使用文档.md
+buildify-publish bundle doc set --name official/wecom-bot --file ./bundle-wecom-bot/docs.md
 buildify-publish --json bundle doc get --name official/wecom-bot   # 确认已同步
 ```
 
-`bundle update` 只改传入的字段。`bundle doc set` 整份覆盖，内容上限约 4Mi 字符，文件必须是 `使用文档.md`。
+`bundle update` 只改传入的字段。`bundle doc set` 整份覆盖，内容上限约 4Mi 字符，文件必须是 `docs.md`。
 只改了使用文档、没有代码变化时，单独 `doc set` 即可，不必发新版本。发布时不上传图标。
 
 ## 源码版本管理

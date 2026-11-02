@@ -32,11 +32,18 @@ Bundle 开发进度：
 - [ ] 6. 编写 README.md 与 CHANGELOG.md
 - [ ] 7. 校验 → 修复 → 重跑，直到 0 ERROR
 - [ ] 8. mvn clean package
+- [ ] 9. 检查源码仓库：没有 git 仓库或远程地址时，提示用户提供仓库地址
 ```
 
 **步骤 7（必须形成闭环）**：执行下方 `validate_bundle.py --strict`；有 ERROR 则按输出定位、
 修复后重跑；0 ERROR 后再 `mvn -q clean package`。提交前对照
 [reference/checklist.md](reference/checklist.md)（含需人工确认的 🔍 项）。
+
+**步骤 9（开发完成必做）**：执行 `git -C <bundle> rev-parse --is-inside-work-tree` 和
+`git -C <bundle> remote -v`。不是仓库或没有远程时，告诉用户“这个 Bundle 还没有源码仓库”，
+请他提供地址（GitHub / Gitee / GitLab），说明好处：版本可回滚、可协作、发布版本能对应到提交。
+拿到地址后初始化、补 `.gitignore`、提交并推送；用户不提供就只提醒一次，不阻塞发布，
+不要自己创建远程仓库。细节见 [reference/publishing.md](reference/publishing.md#源码版本管理)。
 
 ### 按任务读取（勿一次全读）
 
@@ -63,7 +70,7 @@ Bundle 开发进度：
 - 本仓库项目级：`.cursor/skills/buildify-bundle-dev`
 - 全局安装：`~/.cursor/skills/buildify-bundle-dev`
 
-**scaffold_bundle.py** — 生成完整 Bundle 骨架（含 SPI、README、CHANGELOG）：
+**scaffold_bundle.py** — 生成完整 Bundle 骨架（含 SPI、README、CHANGELOG、`.gitignore`）：
 
 ```bash
 python3 <skill-root>/scripts/scaffold_bundle.py \
@@ -81,8 +88,8 @@ python3 <skill-root>/scripts/scaffold_bundle.py \
 
 **validate_bundle.py** — 校验命名、SPI、pom、表单、凭证、complete、RPC、资源泄漏、
 参数变更后的重启 / `onParametersUpdated` 热更新；
-`bundle.json` 节点缺 `icon`（默认应为 `"default.svg"`）以及 resources 下的 SVG 记 WARNING
-（图标文件由平台上传管理，不要打进 JAR）：
+`bundle.json` 节点缺 `icon`（默认应为 `"default.svg"`）、`bundleName` 不符合平台命名规则，
+以及 resources 下的 SVG 记 WARNING（图标放 `icons/` 后用发布 CLI 上传，不要打进 JAR）：
 
 ```bash
 python3 <skill-root>/scripts/validate_bundle.py ./my-bundle           # ERROR 时 exit 1
@@ -95,6 +102,7 @@ python3 <skill-root>/scripts/validate_bundle.py ./my-bundle --strict  # WARNING 
 my-bundle/
 ├── pom.xml                          # buildify-bundle-api scope=provided；release=21；shade+SPI transformer
 ├── README.md / CHANGELOG.md         # 必须
+├── icons/                           # 可选：自定义节点图标，用发布 CLI 上传，不打进 JAR
 └── src/main/
     ├── java/.../nodes|methods|credentials/
     └── resources/
@@ -112,14 +120,17 @@ Maven 依赖：`cn.buildify:buildify-bundle-api`（版本见 `templates/project/
 
 1. `JsonValue` 读字段用 `path()`，不用 `get()`；也不要用 `Objects.requireNonNull` 做参数校验
 2. 同步路径在 `onMsg` 返回前 `tell*` 即可，框架自动 `complete`；异步路径必须对入站 `message` 调用 `context.complete()`。触发器的新消息不在 `onMsg` 内，必须且只 `complete` 一次（用于统计触发器的执行次数与耗时，重复调用会重复计数）；特殊触发器可按说明调整调用位置，但不能省略
-3. 在 `onMsg` 中求值的字段默认 `expression: true` + `droppable: true`（能否切换到表达式）。只在 `initialize()` 读取的参数（超时、cron、路由路径）不开。访问凭证和 `CodeEditor` 也除外：`CodeEditor` 设了会和编辑器交互冲突，只用 `typeOptions.enableExpression`；`lang` 为 `json` 时优先改用 `JsonExpressionInput`。代码侧 `dynamicParameters` + `resolveExpressions`
+3. 在 `onMsg` 中求值的字段默认 `expression: true` + `droppable: true`（能否切换到表达式）。只在 `initialize()` 读取的参数（超时、cron、路由路径）不开。访问凭证和 `CodeEditor` 也除外：`CodeEditor` 设了会和编辑器交互冲突，只用 `typeOptions.enableExpression`；`lang` 为 `json` 时优先改用 `JsonExpressionInput`。代码侧 `dynamicParameters` + `resolveExpressions`。
+   `JsonExpressionInput` 可能整字段就是 `={{msg.name}}`（文本，不是 JSON）：原样放入，**不要** `fromJson`；
+   求值后按实际类型处理，文本不要直接 `toJson()` 当请求体
 4. 普通节点输出放 `output`；触发器 payload 放根级，并带 `triggerNodeId`、`eventId`、`workerId`
 5. 凭证类型 PascalCase；`credentialsType` 三处一致；`getCredentials` 用表单字段 `name`
 6. 已知错误用 `FlowNodeException`，`initialize` 参数校验优先用 SDK 的 `Validator`。接口调用失败（HTTP 非 2xx 或业务码非 0）时用脚手架生成的 `HttpErrors.httpError` / `apiError`，把 `statusCode` 和脱敏后的 `body` 放进 `msg.error.metadata`；代码中的错误码都要写进 README「错误码」一节。触发器遵守
    `isTest()` / `createTriggerMessage(payload, eventId)` / `complete`（位置可按说明调整）/ `destroy()`。`eventId` 同时写入 payload，
    `triggerNodeId` 取 `getWorkflowNodeId()`，`workerId` 取 `getWorkerId()`
-7. 节点 `icon` 默认写 `"default.svg"`，需要自定义图标时再改文件名。不要在工程里生成 SVG，
-   图标文件由平台上传管理，不打进 JAR、不放在 `src/main/resources`
+7. 节点 `icon` 默认写 `"default.svg"`。自定义图标放在 Bundle 根目录的 `icons/`，用
+   `buildify-publish bundle icon upload --icon-name Xxx` 上传，节点 `icon` 写成存储名 `Xxx.svg`
+   （图标名加原扩展名）。图标不打进 JAR、不放 `src/main/resources`；不要自己画 SVG，用用户给的图片
 8. 需要人逐项填写的数组用 `FixedCollection`（可增删），不要用 `JsonEditor` 手写 JSON 数组
 9. 参数变更要么 `isRestartRequired` 返回 `true` 并重启，要么 `onParametersUpdated` 用新参数重新赋值。路由、cron、连接必须重启
 10. 对接三方 HTTP API 时提供以 `ApiCall` 结尾的通用调用节点。未实现的接口按厂商文档填写，不要为每个接口新做节点

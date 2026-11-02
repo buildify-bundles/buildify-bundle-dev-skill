@@ -108,8 +108,54 @@ public void onMsg(Context context, Message<?> msg) {
 }
 ```
 
-`JsonExpressionInput` 字段由编排器提前规整为 `JsonValue`，**不要**在服务端再做
-`JsonValueFactory.fromJson(...asText())`，直接 `path()` 填入 `dynamicParameters`。
+### JsonExpressionInput：先求值，再按类型处理
+
+`JsonExpressionInput` 字段下发时**不一定是 JSON 对象**。用户可以把整个字段写成一个表达式，
+这时它只是一个文本节点 `"={{msg.name}}"`：
+
+| 用户在字段里写 | `parameters.path("body")` 拿到 | `resolveExpressions` 后 |
+|---|---|---|
+| `{"name": "={{msg.name}}", "age": 1}` | 对象节点 | 对象；`name` 保持 `msg.name` 的原类型 |
+| `={{msg.name}}`（整字段） | 文本节点 `"={{msg.name}}"` | `msg.name` 的原类型：字符串、数字、对象都可能 |
+| `={{msg.body}}`，而 `msg.body` 本身是 JSON 字符串 | 文本节点 | **文本**节点，内容是 `{"a":1}` 这样的 JSON 文本 |
+| `=[{{msg.a}}] {{msg.b}}`（混排） | 文本节点 | 拼接后的字符串 |
+
+只有以 `=` 开头的文本才会求值；`{{msg.name}}` 不带 `=` 会原样保留。
+
+规则：
+
+1. `initialize()` 里**原样** `put(parameters.path("body"))`。不要 `fromJson(...asText())`、`asText()`、
+   `toJson()`，也不要断言 `isObject()`。`JsonValueFactory.fromJson("={{msg.name}}")` 会去掉 `=`
+   再解析 `{{msg.name}}`，直接抛 `Invalid JSON`，节点启动失败。
+2. 只在 `resolveExpressions` 之后按**实际类型**处理：对象 / 数组直接用；数字、布尔保持原类型；
+   文本按节点语义决定——需要 JSON 时先尝试 `fromJson`，失败就当普通文本。
+3. 文本节点**不要**直接 `toJson()` 当请求体：`{"a":1}` 会被二次转义成 `"{\"a\":1}"`。
+4. 表单默认值、README 示例里，表达式写在 JSON **字符串值**里：`{"name": "={{msg.name}}"}`。
+   不要写成不带引号的 `{"name": ={{msg.name}}}`（不是合法 JSON），也不要再包一层引号
+   `"\"={{msg.body}}\""`（求值结果会变成带引号的字符串）。
+
+```java
+// initialize()：原样放入，不做任何解析
+this.dynamicParameters = JsonValueFactory.objectNode().put("body", parameters.path("body"));
+
+// onMsg()：求值后按类型生成请求体
+JsonValue body = context.resolveExpressions(dynamicParameters, payload).path("body");
+String requestBody = toRequestBody(body);
+
+private static String toRequestBody(JsonValue body) {
+    if (!body.isTextual()) {
+        return body.toJson();                  // 对象、数组、数字、布尔
+    }
+    String text = body.asText();
+    try {
+        return JsonValueFactory.fromJson(text).toJson();   // 文本本身就是 JSON
+    } catch (IllegalArgumentException e) {
+        return text;                           // 普通文本，按原样发送
+    }
+}
+```
+
+脚手架生成的 HTTP 节点（`Node.java.tmpl`、`GenericApiNode.java.tmpl`）已按此处理请求体。
 
 ## 规范 4：普通节点输出放 `output`，触发器放根级
 

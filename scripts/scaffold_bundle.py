@@ -28,10 +28,11 @@ TEMPLATES = Path(__file__).resolve().parent.parent / "templates"
 
 NODE_NAME_RE = re.compile(r"^[A-Z][A-Za-z0-9]*$")
 PACKAGE_RE = re.compile(r"^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)*$")
-BUNDLE_NAME_RE = re.compile(r"^[a-z0-9][a-z0-9._-]*/[a-z0-9][a-z0-9._-]*$")
+BUNDLE_NAME_RE = re.compile(r"^[a-z0-9]+([._-][a-z0-9]+)*/[a-z0-9]+([._-][a-z0-9]+)*$")
 ERROR_PREFIX_RE = re.compile(r"^[A-Z][A-Z0-9_]*$")
 
 CREDENTIAL_FIELD = "credentialsId"
+GITIGNORE = "target/\n*.jar\n.idea/\n*.iml\n.vscode/\n.DS_Store\n"
 
 
 def render(template_name: str, mapping: dict) -> str:
@@ -83,7 +84,8 @@ def parse_args() -> argparse.Namespace:
 def validate(args: argparse.Namespace) -> None:
     errors = []
     if not BUNDLE_NAME_RE.match(args.bundle_name):
-        errors.append(f"--bundle-name 应为 '组织/名称' 小写格式，实际: {args.bundle_name}")
+        errors.append(f"--bundle-name 应为 '命名空间/包名'，两段只含小写字母、数字和 . _ -"
+                      f"（不连续、不在首尾），实际: {args.bundle_name}")
     if not PACKAGE_RE.match(args.package):
         errors.append(f"--package 不是合法的 Java 包名: {args.package}")
     all_nodes = args.node + args.trigger + args.webhook + args.generic_api
@@ -358,10 +360,12 @@ def main() -> None:
         "DATE": datetime.date.today().isoformat(),
         "NODE_NAME": first_node,
     }), args.force)
+    write(root / ".gitignore", GITIGNORE, args.force)
 
     print("\n完成。后续步骤：")
     print("  1. 编辑 src/main/resources/bundle.json 补全 label / summary")
-    print("     节点 icon 默认为 default.svg，需要自定义图标时再改文件名")
+    print("     节点 icon 默认为 default.svg；自定义图标放 icons/，"
+          "用 buildify-publish bundle icon upload 上传后写存储名")
     print("  2. 编辑 src/main/resources/properties/*.json 定义表单字段")
     print("  3. 实现节点 onMsg 业务逻辑")
     if args.generic_api:
@@ -369,6 +373,7 @@ def main() -> None:
     print("  4. 补全 README.md 与 CHANGELOG.md 中的 TODO")
     print(f"  5. python3 {Path(__file__).parent / 'validate_bundle.py'} {root}")
     print("  6. mvn -q clean package")
+    print("  7. 没有 git 仓库或远程地址时，请用户提供源码仓库地址后初始化并推送")
 
 
 if __name__ == "__main__":

@@ -120,7 +120,7 @@ public class {{NODE_NAME}} implements FlowNode {
             if (sendsBody(method)) {
                 JsonValue body = parameters.path("body");
                 if (!body.isMissingNode() && !body.isNull()) {
-                    publisher = HttpRequest.BodyPublishers.ofString(body.toJson());
+                    publisher = HttpRequest.BodyPublishers.ofString(toRequestBody(body));
                     if (!hasContentType) {
                         builder.header("Content-Type", "application/json");
                     }
@@ -169,6 +169,22 @@ public class {{NODE_NAME}} implements FlowNode {
         if (httpClient != null) {
             httpClient.close();
             httpClient = null;
+        }
+    }
+
+    /**
+     * body 整字段可能是 ={{msg.xxx}}，求值后不一定是对象。文本节点直接 toJson() 会把
+     * {"a":1} 二次转义成 "{\"a\":1}"，所以先按 JSON 解析，失败再按原文发送。
+     */
+    private static String toRequestBody(JsonValue body) {
+        if (!body.isTextual()) {
+            return body.toJson();
+        }
+        String text = body.asText();
+        try {
+            return JsonValueFactory.fromJson(text).toJson();
+        } catch (IllegalArgumentException e) {
+            return text;
         }
     }
 

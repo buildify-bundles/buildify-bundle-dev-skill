@@ -349,14 +349,20 @@ Map<String, Object> map = obj.toMap();
 
 ### JsonExpressionInput 叶子节点处理
 
-组装 `dynamicParameters` 时按值类型分别处理：
+`initialize()` 里一律**原样** `put(parameters.path("字段"))` 进 `dynamicParameters`。字段可能是对象，
+也可能是整字段表达式文本 `"={{msg.name}}"`；对后者调 `JsonValueFactory.fromJson(...)` 会抛
+`Invalid JSON`（`fromJson` 去掉 `=` 后解析 `{{msg.name}}`）。
 
-| 值类型 | 处理 |
+`resolveExpressions` 之后按实际类型处理：
+
+| 求值后的类型 | 处理 |
 |---|---|
-| 已是对象/数组节点 | 直接 `put` |
-| 文本且为静态 JSON | `JsonValueFactory.fromJson(text)` 后 `put`；解析失败保留原文本 |
-| POJO（`isPojo()=true`） | `JsonValueFactory.fromObject(value.rawValue())` 后 `put` |
-| 含 `{{` / `={{` 的表达式 | **原样 `put`**，留待 `resolveExpressions` 后二次解析 |
+| 对象 / 数组 | 直接使用；作请求体时 `toJson()` |
+| 数字 / 布尔 | 保持原类型，不要转成字符串 |
+| 文本 | 按节点语义：需要 JSON 时先 `fromJson`，失败当普通文本；**不要**直接 `toJson()`（会二次转义） |
+| POJO（`isPojo()=true`） | `JsonValueFactory.fromObject(value.rawValue())` |
+
+完整说明与示例见 [coding-rules.md](../coding-rules.md#jsonexpressioninput先求值再按类型处理)。
 
 ## Relation
 

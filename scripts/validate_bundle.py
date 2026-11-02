@@ -36,6 +36,10 @@ def warn(location: str, message: str) -> None:
 
 PASCAL_CASE = re.compile(r"^[A-Z][A-Za-z0-9]*$")
 SERVICE_NAME = re.compile(r"^[A-Za-z0-9._-]+$")
+BUNDLE_SEGMENT = re.compile(r"^[a-z0-9]+([._-][a-z0-9]+)*$")
+ICON_FILE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]*\.(png|jpe?g|gif|webp|svg)$")
+PARAM_FROM_JSON = re.compile(
+    r"JsonValueFactory\s*\.\s*fromJson\(\s*\w*[pP]arameters\s*\.\s*path\([^;]*?\.\s*asText\(")
 
 # 内置的表单驱动方法名，无需对应 MethodExecutor
 BUILTIN_METHODS = {"test"}
@@ -839,6 +843,10 @@ def check_node_code(jf: JavaFile, is_trigger: bool) -> None:
     if re.search(r"\bObjects\s*\.\s*requireNonNull\(", code):
         warn(loc, "Objects.requireNonNull 失败时抛 NullPointerException，"
                   "参数校验请改用 FlowNodeException（onMsg 中走 tellFailure）")
+    if PARAM_FROM_JSON.search(code):
+        err(loc, "不要对节点参数调用 JsonValueFactory.fromJson(...asText())：JsonExpressionInput 整字段写成 "
+                 "={{msg.xxx}} 时是文本，会抛 Invalid JSON。原样放入 dynamicParameters，"
+                 "resolveExpressions 后再按实际类型处理")
     routed = re.search(r"\btell(?:Success|Failure|Next)\(", code)
     has_async = re.search(r"\bexecuteBlocking\(|\bsendAsync\(|\bwhenComplete\(|\bthenAccept\(", code)
 
@@ -963,6 +971,9 @@ def parse_bundle_nodes(data: dict, declared: dict) -> None:
                                 "需要自定义图标时再改文件名")
         elif not isinstance(icon, str):
             err("bundle.json", f"{where}({name}) icon 必须是字符串，默认 \"default.svg\"")
+        elif not ICON_FILE.match(icon):
+            warn("bundle.json", f"{where}({name}) icon '{icon}' 应为上传后的存储名，如 \"HttpTrigger.svg\""
+                                "（字母、数字、_、- 加图片扩展名），不要写路径")
         declared[name] = node
 
     if isinstance(groups, list) and groups:
@@ -1094,16 +1105,22 @@ def main() -> int:
     else:
         data = load_json(bundle_path, "bundle.json")
         if isinstance(data, dict):
-            if not data.get("bundleName"):
+            bundle_name = data.get("bundleName")
+            if not bundle_name:
                 warn("bundle.json", "缺少根级 bundleName；发布前必须与平台注册名对齐"
                                     "（否则需在发布脚本中显式映射）")
+            elif not isinstance(bundle_name, str) or len(bundle_name.split("/")) != 2 \
+                    or not all(BUNDLE_SEGMENT.match(s) for s in bundle_name.split("/")):
+                warn("bundle.json", f"bundleName '{bundle_name}' 应为「命名空间/包名」，两段只含小写字母、"
+                                    "数字和 . _ -（不连续、不在首尾），否则平台无法创建该软件包")
             if "credentials" in data:
                 warn("bundle.json", "不需要 credentials 数组，凭证通过 SPI 自动发现")
             parse_bundle_nodes(data, declared)
 
         for svg in sorted(resources.rglob("*.svg")) + sorted(resources.rglob("*.svgz")):
             rel = svg.relative_to(project)
-            warn(str(rel), "不要把节点图标打进 Bundle；图标由平台上传管理，请删除该 SVG")
+            warn(str(rel), "不要把节点图标打进 Bundle；移到项目根目录 icons/，"
+                           "用 buildify-publish bundle icon upload 上传")
 
         for name in sorted(set(declared) - set(nodes)):
             err("bundle.json", f"声明了节点 '{name}' 但没有对应的 "

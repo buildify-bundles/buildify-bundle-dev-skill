@@ -8,8 +8,9 @@
 - [ ] 使用 `maven.compiler.release=21` 而非 `source`/`target`
 - [ ] `maven-shade-plugin` 配置了 `ServicesResourceTransformer`
 - [ ] `bundle.json` 位于 `src/main/resources` 根目录
-- [ ] 每个节点 `icon` 为 `"default.svg"`，仅在需要自定义图标时修改文件名
-- [ ] 未把 SVG 打进 `src/main/resources`（图标文件由平台上传管理）
+- [ ] 每个节点 `icon` 为 `"default.svg"`，或是已用 `bundle icon upload` 上传的存储名（如 `HttpTrigger.svg`）
+- [ ] 图标文件放在 Bundle 根目录 `icons/`，未放进 `src/main/resources`、未打进 JAR
+- [ ] `bundle.json` 的 `bundleName` 为 `命名空间/包名`，两段只含小写字母、数字和 `. _ -`
 - [ ] 模块根目录存在 `README.md` 与 `CHANGELOG.md`
 
 ## FlowNode
@@ -31,7 +32,10 @@
 - [ ] 含表达式的参数在 `initialize()` 存入 `dynamicParameters`，`onMsg()` 用
       `resolveExpressions` 解析
 - [ ] `JsonExpressionInput` 字段直接 `parameters.path(...)` 填入 `dynamicParameters`，
-      **未**在服务端多做一次 `JsonValueFactory.fromJson(...asText())`
+      **未**在服务端多做一次 `JsonValueFactory.fromJson(...asText())`（整字段 `={{msg.name}}` 会抛 `Invalid JSON`）
+- [ ] 求值后按实际类型处理：未假定一定是对象；文本节点未直接 `toJson()` 当请求体（会二次转义）
+- [ ] 表单默认值和 README 示例中，表达式写在 JSON 字符串值里（`"name": "={{msg.name}}"`），
+      没有不带引号或多包一层引号
 - [ ] **非触发器**节点输出放入 payload 的 `output` 字段，不散落在根级
 - [ ] 已知错误使用 `FlowNodeException` 结构化，不直接 `throw new RuntimeException(...)` /
       `IllegalArgumentException(...)`
@@ -169,3 +173,13 @@
 - [ ] `--overwrite` 仅用于 `-SNAPSHOT` 版本
 - [ ] 多把发布密钥时命令带 `--profile`；用户未要求时不改 `[publish].current`
 - [ ] 仓库有 `.buildify-workspace` 时，所用密钥的 `tenantId` 与该文件一致
+- [ ] `key test` 返回的 `tenantName` 已向用户确认是目标工作空间
+- [ ] 软件包已存在（`bundle info`）；新包经用户确认名称、显示名、可见性后才 `bundle create`
+- [ ] 自定义图标已 `bundle icon upload`，`bundle icons` 列表包含每个非 `default.svg` 的 `icon`
+- [ ] 上传后 `bundle doc set --file README.md` 同步了平台说明文档
+
+## 源码版本管理
+
+- [ ] Bundle 目录在 git 仓库内且有远程地址；没有时已提示用户提供仓库地址（不阻塞发布）
+- [ ] `.gitignore` 含 `target/`、`*.jar` 和 IDE 文件；仓库中没有发布密钥、`~/.buildifyrc` 或凭证明文
+- [ ] 🔍 发布的版本对应一次已提交的代码

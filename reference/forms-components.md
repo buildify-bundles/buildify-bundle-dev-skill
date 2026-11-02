@@ -82,8 +82,12 @@ Monaco 多语言编辑器，值为 `String`。
 `JsonExpressionInput` 在 JSON **字符串值**里用 `={{msg.xxx}}` 做整字段替换（保留类型）；混排写成 `"=[{{msg.a}}] {{msg.b}}"`。
 它是编辑 JSON 的首选控件，代替 `CodeEditor`（`lang: "json"`）。
 两者只用于自由结构的整份 JSON 文档。需要人逐项添加的数组改用 `FixedCollection`。
-编排器会把值规整为 `JsonValue` 树下发——服务端直接 `parameters.path("字段")` 放进
-`dynamicParameters` 即可，**不要**再 `JsonValueFactory.fromJson(...asText())`。
+服务端直接 `parameters.path("字段")` 放进 `dynamicParameters`，**不要**再
+`JsonValueFactory.fromJson(...asText())`。用户可能把整个字段写成 `={{msg.name}}`，这时下发的是文本节点，
+`fromJson` 会抛 `Invalid JSON`；求值后也可能是字符串、数字而不是对象。按求值后的实际类型处理，
+见 [coding-rules.md](../coding-rules.md#jsonexpressioninput先求值再按类型处理)。
+
+写默认值时表达式放在字符串值里：`{"name": "={{msg.name}}"}`，不要写 `{"name": ={{msg.name}}}`。
 
 ### ExpressionInput（TemplateExpressionInput）
 

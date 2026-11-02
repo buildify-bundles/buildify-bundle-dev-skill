@@ -130,7 +130,7 @@ public void onMsg(Context context, Message<?> msg) {
 2. 只在 `resolveExpressions` 之后按**实际类型**处理：对象 / 数组直接用；数字、布尔保持原类型；
    文本按节点语义决定——需要 JSON 时先尝试 `fromJson`，失败就当普通文本。
 3. 文本节点**不要**直接 `toJson()` 当请求体：`{"a":1}` 会被二次转义成 `"{\"a\":1}"`。
-4. 表单默认值、README 示例里，表达式写在 JSON **字符串值**里：`{"name": "={{msg.name}}"}`。
+4. 表单默认值、使用文档示例里，表达式写在 JSON **字符串值**里：`{"name": "={{msg.name}}"}`。
    不要写成不带引号的 `{"name": ={{msg.name}}}`（不是合法 JSON），也不要再包一层引号
    `"\"={{msg.body}}\""`（求值结果会变成带引号的字符串）。
 
@@ -239,7 +239,7 @@ throw new FlowNodeException("API_ERROR_" + code, "API 调用失败: " + apiMsg)
     .with("code", code).with("message", apiMsg);
 ```
 
-代码里出现的每个错误码都要写进 README 的「错误码」一节（含义 + 排查建议），
+代码里出现的每个错误码都要写进使用文档的「错误码」一节（含义 + 排查建议），
 `validate_bundle.py` 会对照检查。
 
 ### 接口调用失败：响应放进 `error.metadata`

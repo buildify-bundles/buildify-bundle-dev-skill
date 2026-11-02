@@ -502,16 +502,19 @@ def main() -> None:
               "".join(f"{args.package}.methods.{s.split(':', 1)[0]}\n" for s in args.method),
               args.force)
 
-    # 文档
+    # 文档：使用文档.md 同步到平台；README.md 只给开发这个 Bundle 的人看
     first_node = node_specs[0][0]
-    readme = render("project/README.md.tmpl", {
+    usage = render("project/使用文档.md.tmpl", {
         "NODE_ROWS": node_rows(args),
         "CREDENTIAL_SECTION": credential_section(args),
         "NODE_SECTIONS": node_sections(args, error_prefix),
         "GENERIC_API": generic_api_readme(args.generic_api) if args.generic_api else "",
         "ERROR_CODES": error_codes_table(args, error_prefix),
     })
-    write(root / "README.md", readme, args.force)
+    write(root / "使用文档.md", usage, args.force)
+    write(root / "README.md", render("project/README.md.tmpl", {
+        "ARTIFACT_ID": args.artifact_id,
+    }), args.force)
     write(root / "CHANGELOG.md", render("project/CHANGELOG.md.tmpl", {
         "VERSION": args.version,
         "DATE": datetime.date.today().isoformat(),
@@ -523,8 +526,9 @@ def main() -> None:
     print("  1. 编辑 src/main/resources/bundle.json：节点 label 写成中文短名，summary ≤10 字写清做什么")
     print("     发布建包时软件名称（--display-name）= 官方中文名+能力；软件描述（--summary）按"
           "「对接谁：能做什么。用于场景。不含边界」写，见 reference/publishing.md")
-    print("     对接厂商时从官网或图标站找 SVG：封面存 icons/cover.svg，节点图标存 icons/<icon 值>"
-          "（如 icons/DingTalk.svg ↔ \"icon\": \"DingTalk.svg\"）；找不到时封面用 https://bundles.buildify.cn/icons/default.svg，节点保持 default.svg")
+    print("     创建软件包时才从官网或图标站找 SVG：封面存 icons/cover.svg，节点图标存 icons/<icon 值>"
+          "（如 icons/DingTalk.svg ↔ \"icon\": \"DingTalk.svg\"）；找不到时封面用 https://bundles.buildify.cn/icons/default.svg，节点保持 default.svg。"
+          "发布已有软件包的新版本时不查找、不上传图标")
     print("  2. 编辑 src/main/resources/properties/*.json 定义表单字段")
     print("  3. 实现节点 onMsg 业务逻辑")
     if args.trigger or args.webhook:
@@ -532,8 +536,8 @@ def main() -> None:
               "不要用无界队列缓存事件，见 reference/backpressure.md")
     if args.generic_api:
         print("     通用调用节点已生成：未实现的接口按厂商文档填 method/path/query/headers/body")
-    print("  4. 按节点补全 README.md（平台使用文档，给用户和编排 Agent 看：何时使用、参数、输出路径、出口）"
-          "与 CHANGELOG.md；不要写项目结构、构建、ClassLoader")
+    print("  4. 按节点补全 使用文档.md（平台用户使用文档，给用户和编排 Agent 看：何时使用、参数、输出路径、出口）"
+          "与 CHANGELOG.md；不要写项目结构、构建、ClassLoader。README.md 不上传到平台")
     print(f"  5. python3 {Path(__file__).parent / 'validate_bundle.py'} {root}")
     print("  6. mvn -q clean package")
     print("  7. 没有 git 仓库或远程地址时，请用户提供源码仓库地址后初始化并推送")

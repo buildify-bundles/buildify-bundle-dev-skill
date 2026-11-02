@@ -9,7 +9,7 @@ reference/forms-components.md 保持一致。
 
 检查项：命名一致性、SPI 注册、pom 配置、表单 schema 合法性、凭证字段规范、
 消息 complete、触发器约定、Node Service RPC、资源释放、参数重启与热更新、
-异常与日志规范、README/CHANGELOG。
+异常与日志规范、使用文档/CHANGELOG。
 
 退出码：0 = 通过；1 = 存在 ERROR（--strict 时 WARNING 也算失败）。
 仅依赖 Python 3.8+ 标准库。
@@ -40,6 +40,7 @@ BUNDLE_SEGMENT = re.compile(r"^[a-z0-9]+([._-][a-z0-9]+)*$")
 ICON_FILE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]*\.(png|jpe?g|gif|webp|svg)$")
 DEFAULT_ICON = "default.svg"
 COVER_STEM = "cover"
+USAGE_DOC = "使用文档.md"
 ICON_MAX_BYTES = 1024 * 1024
 PARAM_FROM_JSON = re.compile(
     r"JsonValueFactory\s*\.\s*fromJson\(\s*\w*[pP]arameters\s*\.\s*path\([^;]*?\.\s*asText\(")
@@ -155,9 +156,10 @@ def check_pom(project: Path) -> None:
 
 
 def check_docs(project: Path) -> None:
-    if not (project / "README.md").is_file():
-        err("README.md", "每个 Bundle 必须在模块根目录提供 README.md（适用/凭证/节点一览/参数/输出/出口/错误码），"
-                        "发布时同步为平台使用文档，供用户和编排 Agent 阅读")
+    if not (project / USAGE_DOC).is_file():
+        err(USAGE_DOC, "每个 Bundle 必须在模块根目录提供使用文档.md（适用/凭证/节点一览/参数/输出/出口/错误码），"
+                      "发布时用 bundle doc set --file 使用文档.md 同步到平台，供用户和编排 Agent 阅读；"
+                      "不要同步 README.md")
     changelog = project / "CHANGELOG.md"
     if not changelog.is_file():
         warn("CHANGELOG.md", "缺少 CHANGELOG.md，发布时 --release-notes-file 无文件可指向")
@@ -566,7 +568,7 @@ def _calls_http_errors(java_files: list, method: str) -> bool:
 
 
 def check_error_codes(project: Path, java_files: list) -> None:
-    """接口失败带上 statusCode / body；代码里用到的错误码都要写进 README。"""
+    """接口失败带上 statusCode / body；代码里用到的错误码都要写进使用文档。"""
     codes = set()
     for jf in java_files:
         code = jf.code
@@ -585,14 +587,14 @@ def check_error_codes(project: Path, java_files: list) -> None:
             if _calls_http_errors(java_files, "apiError"):
                 codes.add(prefix.group(1) + "_API_")
 
-    readme = project / "README.md"
-    if not codes or not readme.is_file():
+    usage = project / USAGE_DOC
+    if not codes or not usage.is_file():
         return
-    text = readme.read_text(encoding="utf-8", errors="replace")
+    text = usage.read_text(encoding="utf-8", errors="replace")
     missing = sorted(c for c in codes if c not in text)
     if missing:
-        warn("README.md", "未说明错误码 %s；README 的「错误码」一节需逐一写明含义与排查建议"
-                          % "、".join(missing))
+        warn(USAGE_DOC, "未说明错误码 %s；使用文档的「错误码」一节需逐一写明含义与排查建议"
+                        % "、".join(missing))
 
 
 def check_icon_files(project: Path, declared: dict) -> None:
@@ -609,7 +611,7 @@ def check_icon_files(project: Path, declared: dict) -> None:
                                 f"{COVER_STEM}.* 留给封面，节点图标换个名字")
         elif not (icons_dir / icon).is_file():
             warn("bundle.json", f"节点 '{name}' icon '{icon}' 在 icons/ 下没有同名文件；"
-                                f"把图片存为 icons/{icon}，发布时按文件名上传，"
+                                f"把图片存为 icons/{icon}，创建软件包时按文件名上传，"
                                 "找不到合适图片就改回 \"default.svg\"")
     if not icons_dir.is_dir():
         return
@@ -630,23 +632,23 @@ def check_icon_files(project: Path, declared: dict) -> None:
 
 
 def check_readme_nodes(project: Path, declared: dict, credential_types: set) -> None:
-    """README 会同步为平台使用文档，给用户和编排 Agent 看。"""
-    readme = project / "README.md"
-    if not readme.is_file():
+    """使用文档.md 会同步为平台用户使用文档，给用户和编排 Agent 看。"""
+    usage = project / USAGE_DOC
+    if not usage.is_file():
         return
-    text = readme.read_text(encoding="utf-8", errors="replace")
+    text = usage.read_text(encoding="utf-8", errors="replace")
     missing = sorted(n for n in declared if f"`{n}`" not in text)
     if missing:
-        warn("README.md", "未介绍节点 %s；「节点一览」和对应小节需列出全部节点，"
-                          "编排 Agent 靠 `name` 选用" % "、".join(missing))
+        warn(USAGE_DOC, "未介绍节点 %s；「节点一览」和对应小节需列出全部节点，"
+                        "编排 Agent 靠 `name` 选用" % "、".join(missing))
     missing_cred = sorted(c for c in credential_types if f"`{c}`" not in text)
     if missing_cred:
-        warn("README.md", "未写明凭证类型 %s；编排写入 credentials.type 时必须与此逐字一致"
-                          % "、".join(missing_cred))
+        warn(USAGE_DOC, "未写明凭证类型 %s；编排写入 credentials.type 时必须与此逐字一致"
+                        % "、".join(missing_cred))
     if re.search(r"^##\s*开发者说明", text, re.M) or "ClassLoader" in text \
             or re.search(r"^###\s*构建", text, re.M):
-        warn("README.md", "平台使用文档给用户和编排 Agent 看，不要写入项目结构、构建命令、"
-                          "依赖表格、ClassLoader 等开发内容")
+        warn(USAGE_DOC, "用户使用文档给用户和编排 Agent 看，不要写入项目结构、构建命令、"
+                        "依赖表格、ClassLoader 等开发内容；那些写在 README.md，且不要把 README 同步到平台")
 
 
 def check_node_service(jf: JavaFile, is_method_executor: bool = False) -> None:
@@ -1231,7 +1233,7 @@ def main() -> int:
         for svg in sorted(resources.rglob("*.svg")) + sorted(resources.rglob("*.svgz")):
             rel = svg.relative_to(project)
             warn(str(rel), "不要把节点图标打进 Bundle；移到项目根目录 icons/，"
-                           "用 buildify-publish bundle icon upload 上传")
+                           "创建软件包时用 buildify-publish bundle icon upload 上传")
 
         check_icon_files(project, declared)
         check_readme_nodes(project, declared, credential_types)

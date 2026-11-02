@@ -10,9 +10,9 @@
 - [ ] `bundle.json` 位于 `src/main/resources` 根目录
 - [ ] 每个节点 `icon` 为 `"default.svg"`，或是 `icons/` 下同名文件的文件名（如 `icons/DingTalk.svg` ↔ `"DingTalk.svg"`）
 - [ ] 图标文件放在 Bundle 根目录 `icons/`，未放进 `src/main/resources`、未打进 JAR；`icons/` 下没有无人引用的图片
-- [ ] 🔍 图标来自用户、厂商官网或图标站（Simple Icons / Iconify / svgl），不是自己画的；已向用户列出文件、用途和来源
+- [ ] 🔍 创建软件包时，图标来自用户、厂商官网或图标站（Simple Icons / Iconify / svgl），不是自己画的；已向用户列出文件、用途和来源。发布新版本时不再查找或上传
 - [ ] `bundle.json` 的 `bundleName` 为 `命名空间/包名`，两段只含小写字母、数字和 `. _ -`
-- [ ] 模块根目录存在 `README.md`（平台使用文档）与 `CHANGELOG.md`
+- [ ] 模块根目录存在 `使用文档.md`（平台用户使用文档）与 `CHANGELOG.md`；`README.md` 不作为平台文档
 
 ## FlowNode
 
@@ -35,7 +35,7 @@
 - [ ] `JsonExpressionInput` 字段直接 `parameters.path(...)` 填入 `dynamicParameters`，
       **未**在服务端多做一次 `JsonValueFactory.fromJson(...asText())`（整字段 `={{msg.name}}` 会抛 `Invalid JSON`）
 - [ ] 求值后按实际类型处理：未假定一定是对象；文本节点未直接 `toJson()` 当请求体（会二次转义）
-- [ ] 表单默认值和 README 示例中，表达式写在 JSON 字符串值里（`"name": "={{msg.name}}"`），
+- [ ] 表单默认值和使用文档示例中，表达式写在 JSON 字符串值里（`"name": "={{msg.name}}"`），
       没有不带引号或多包一层引号
 - [ ] **非触发器**节点输出放入 payload 的 `output` 字段，不散落在根级
 - [ ] 已知错误使用 `FlowNodeException` 结构化，不直接 `throw new RuntimeException(...)` /
@@ -47,7 +47,7 @@
 - [ ] 写入 `error.metadata.body` 前已把 Token、密钥等字段替换为 `***`（`HttpErrors.redact`）
 - [ ] `getCredentials(...)` 用 try/catch 处理找不到凭证的情况（会抛异常，不会返回 null）
 - [ ] 已知失败（`FlowNodeException`、连接失败 / 超时）日志用 `warn`，未知异常用 `error` 并保留堆栈
-- [ ] 代码中出现的每个错误码都写进了 README「错误码」一节
+- [ ] 代码中出现的每个错误码都写进了使用文档「错误码」一节
 - [ ] `destroy()` 中释放所有资源，且实现幂等
 - [ ] 未使用已移除的旧事件 API：`sendRequestEvent` / `sendResponseEvent`、
       `RequestEvent` / `ResponseEvent`、`onRequestEvent` / `onResponseEvent`
@@ -55,7 +55,7 @@
       （与 `initialize()` 共用 `applyParameters()`）；未覆写 `isRestartRequired()` 时任意变化都会重启
 - [ ] 路由、cron、连接、连接池所用参数在变化时让 `isRestartRequired()` 返回 `true`
 - [ ] 对接三方 HTTP API 时包含以 `ApiCall` 结尾的通用调用节点。尚未实现的接口按厂商文档填
-      `method` / `path` / `query` / `headers` / `body`，鉴权走凭证，README 保留「通用调用」一节
+      `method` / `path` / `query` / `headers` / `body`，鉴权走凭证，使用文档保留「通用调用」一节
 ## 触发器节点
 
 - [ ] 注解同时设置 `isTrigger = true, hasInput = false`
@@ -72,7 +72,7 @@
 - [ ] 使用 `TriggerGuard` + 表单 `maxPerSecond`（默认 `0` 不限速），轮询类防重叠（`tryEnter` / `exit`）且每轮条数有上限
 - [ ] 🔍 本地缓冲只用有界队列（`ArrayBlockingQueue` 等），没有 `new LinkedBlockingQueue<>()`、
       `ConcurrentLinkedQueue`、`Executors.newFixedThreadPool/newCachedThreadPool`；`destroy()` 中清空缓冲并 `guard.reset()`
-- [ ] README 写明了限流行为（丢弃计数 / 429 + `Retry-After`）
+- [ ] 使用文档写明了限流行为（丢弃计数 / 429 + `Retry-After`）
 
 ## 凭证
 
@@ -161,16 +161,16 @@
 - [ ] SPI 文件每行一个完整类名，UTF-8 编码，无该类型实现时不创建文件
 - [ ] `bundle.json` 中无 `credentials` 数组（凭证通过 SPI 自动发现）
 
-## README / CHANGELOG
+## 使用文档 / CHANGELOG
 
-- [ ] `README.md` 是平台使用文档（给用户和编排 Agent）：含适用、凭证、节点一览、每个节点一节、错误码
+- [ ] `使用文档.md` 是平台用户使用文档（给用户和编排 Agent）：含适用、凭证、节点一览、每个节点一节、错误码。发布时同步这一份，不同步 `README.md`
 - [ ] 节点一览列出全部 `name`（编排用）、类型、何时使用
 - [ ] 每个节点一节标题是 `name`；有何时使用、参数表（字段名与表单一致、标明表达式）、输出 JSON 与下游引用路径、Success / Failure
 - [ ] 普通节点成功数据在 `output`；触发器 / Webhook payload 在根级，并写 `triggerNodeId` / `eventId` / `workerId`
 - [ ] 凭证类型标识与 `@CredentialsDescription(type)` 逐字一致；不需要凭证则写明
 - [ ] 含「错误码」一节，覆盖代码中出现的全部错误码（含义 + 排查建议）
 - [ ] 未写入项目结构、构建命令、依赖表格、ClassLoader、SPI 等开发内容
-- [ ] 🔍 README 与本版本行为一致；用户和 Agent 只靠这一份就能用节点，不必读源码
+- [ ] 🔍 使用文档与本版本行为一致；用户和 Agent 只靠这一份就能用节点，不必读源码
 - [ ] `CHANGELOG.md` 仅一节，标题版本与 `pom.xml` `<version>` 一致，正文为用户可见变更
 - [ ] 🔍 CHANGELOG 正文未夹带仓库 / CLI / spec 元信息
 
@@ -188,10 +188,9 @@
 - [ ] 🔍 软件名称是「官方中文名 + 能力」（2–16 字）；软件描述 40–150 字，按「对接对象（含英文名）→ 按节点列出的动作 → 用于场景 → 不含边界（请用「另一包」）」写，无营销词和实现细节
 - [ ] 🔍 搜包用的中文名、英文名、别名、动作、场景都出现在名称或描述里；同一厂商多个包时名称能区分、描述互相用「请用」指向
 - [ ] 节点 `label` 是中文短名（不是类名），`summary` ≤ 10 字且不是「待补充」
-- [ ] 节点增删或对接范围变化时已 `bundle update --display-name / --summary`，README 标题和第一段与软件名称、软件描述一致
-- [ ] 软件包封面 `icons/cover.*` 已随 `bundle create` / `bundle update --icon` 上传；找不到图时用的是 `https://bundles.buildify.cn/icons/default.svg`
-- [ ] 自定义图标已 `bundle icon upload`，`bundle icons` 列表包含每个非 `default.svg` 的 `icon`
-- [ ] README 已按本版本更新，并在 `bundle upload` **之前** `bundle doc set --file README.md`，`bundle doc get` 确认已同步
+- [ ] 节点增删或对接范围变化时已 `bundle update --display-name / --summary`，使用文档标题和第一段与软件名称、软件描述一致
+- [ ] 仅新建软件包时：封面 `icons/cover.*` 随 `bundle create --icon` 上传（找不到图时用 `https://bundles.buildify.cn/icons/default.svg`），自定义图标已 `bundle icon upload`。发布新版本时不查找、不上传图标
+- [ ] `使用文档.md` 已按本版本更新，并在 `bundle upload` **之前** `bundle doc set --file 使用文档.md`，`bundle doc get` 确认已同步。没有把 `README.md` 传上去
 
 ## 源码版本管理
 

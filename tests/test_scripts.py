@@ -185,12 +185,12 @@ WARNING_MUTATIONS = [
     ("custom icon without file in icons/",
      f"{RES}/bundle.json", '"icon": "default.svg",', '"icon": "DingTalk.svg",',
      "把图片存为 icons/DingTalk.svg"),
-    ("node missing from README",
-     "README.md", "MyTrigger", "TriggerGone", "未介绍节点 MyTrigger"),
-    ("credential type missing from README",
-     "README.md", "`MyApiCredential`", "", "未写明凭证类型 MyApiCredential"),
-    ("developer internals in README",
-     "README.md", "## 错误码", "## 开发者说明\n\n## 错误码", "不要写入项目结构"),
+    ("node missing from usage doc",
+     "使用文档.md", "MyTrigger", "TriggerGone", "未介绍节点 MyTrigger"),
+    ("credential type missing from usage doc",
+     "使用文档.md", "`MyApiCredential`", "", "未写明凭证类型 MyApiCredential"),
+    ("developer internals in usage doc",
+     "使用文档.md", "## 错误码", "## 开发者说明\n\n## 错误码", "不要写入项目结构"),
     ("placeholder node summary",
      f"{RES}/bundle.json", '"summary": "处理请求"', '"summary": "待补充"', "不要留「待补充」"),
     ("bundleName breaks platform naming",
@@ -202,8 +202,8 @@ WARNING_MUTATIONS = [
     ("trigger cron with expression",
      f"{RES}/properties/MyTrigger.json", '"uiComponent": "Input",',
      '"uiComponent": "Input", "expression": true,', "properties[cron] 只在 initialize() 中读取"),
-    ("error code missing from README",
-     "README.md", "`MISSING_HOST`", "", "未说明错误码 MISSING_HOST"),
+    ("error code missing from usage doc",
+     "使用文档.md", "`MISSING_HOST`", "", "未说明错误码 MISSING_HOST"),
     ("trigger uses tellSuccess",
      f"{NODES}/MyTrigger.java", "if (context.tryTellSuccess(triggered)) {",
      "context.tellSuccess(triggered);\n                if (triggered != null) {", "请用 context.tryTellSuccess"),
@@ -394,9 +394,9 @@ class ErrorPrefixTest(ScriptTestCase):
     def test_prefix_derived_from_artifact_id(self):
         errors = (self.full / SUPPORT / "HttpErrors.java").read_text(encoding="utf-8")
         self.assertIn('PREFIX = "DEMO"', errors)
-        readme = (self.full / "README.md").read_text(encoding="utf-8")
-        self.assertIn("`DEMO_HTTP_ERROR`", readme)
-        self.assertIn('"code": "DEMO_HTTP_ERROR"', readme)
+        usage = (self.full / "使用文档.md").read_text(encoding="utf-8")
+        self.assertIn("`DEMO_HTTP_ERROR`", usage)
+        self.assertIn('"code": "DEMO_HTTP_ERROR"', usage)
 
     def test_prefix_override_and_stripping(self):
         cases = {

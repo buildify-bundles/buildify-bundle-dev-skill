@@ -1,20 +1,26 @@
-# README、CHANGELOG 与发布
+# 使用文档、CHANGELOG 与发布
 
 ## 目录
 
-- [README.md（每个 Bundle 必须）](#readmemd每个-bundle-必须)
+- [使用文档.md（每个 Bundle 必须）](#使用文档md每个-bundle-必须)
 - [CHANGELOG.md 与平台 releaseNote](#changelogmd-与平台-releasenote)
 - [buildify-publish CLI](#buildify-publish-cli)
 - [命名与图标](#命名与图标)（软件名称与软件描述见[发布流程](#软件名称与软件描述)）
 - [发布流程](#发布流程)
 - [源码版本管理](#源码版本管理)
 
-## README.md（每个 Bundle 必须）
+## 使用文档.md（每个 Bundle 必须）
 
-放在模块根目录。每次发布用 `bundle doc set` **整份**同步到平台，用户在软件包页阅读，编排 Agent
-用 `bundle doc` 阅读后决定怎么用节点。所以 README **只写用法**，不要写给 Bundle 开发者看的内容
-（项目结构、`mvn`、依赖表格、ClassLoader、SPI、Java 类名实现细节）。那些在本 skill 的
-`coding-rules.md` 里，不要进平台文档。
+放在模块根目录，文件名固定为 `使用文档.md`。这是平台上的**用户使用文档**。每次发布用
+`bundle doc set --file 使用文档.md` **整份**同步到平台，用户在软件包页阅读，编排 Agent
+用 `bundle doc` 阅读后决定怎么用节点。
+
+`README.md` 只给开发这个 Bundle 的人看（构建、仓库说明）。**发布时不要** `doc set` README，
+也不要用 README 代替使用文档。
+
+使用文档 **只写用法**，不要写给 Bundle 开发者看的内容
+（项目结构、`mvn`、依赖表格、ClassLoader、SPI、Java 类名实现细节）。那些留在 `README.md`
+和本 skill 的 `coding-rules.md` 里，不要进平台文档。
 
 读者有两种，一节里同时照顾到：
 
@@ -35,7 +41,7 @@
 | **通用调用** | 有 `*ApiCall` 时保留：按厂商文档填 `method` / `path` / `query` / `headers` / `body` |
 | **错误码** | 代码里每个 `FlowNodeException` 码：含义 + 排查建议 |
 
-每次改了节点、参数、输出或错误码，都要在同一次改动里更新 README，不要留到发布时补。
+每次改了节点、参数、输出或错误码，都要在同一次改动里更新使用文档，不要留到发布时补。
 
 ### 每个节点一节（给 Agent 能直接抄）
 
@@ -134,7 +140,7 @@
 | 对接设备 / API 的注意事项 | |
 
 确实没有用户可见差异时，用一句"与上一版本行为一致"或"仅文档更新"即可，
-不要堆模板。该节**不得为空**，禁止只写"见 README"。
+不要堆模板。该节**不得为空**，禁止只写"见使用文档"。
 
 ## buildify-publish CLI
 
@@ -168,7 +174,7 @@ buildify-publish help
 | `bundle icon upload --name <ns/name> --icon-name <名> --file <图片>` | `POST /v1/bundles/icons` | 上传节点图标；同名覆盖 |
 | `bundle icon delete --name <ns/name> --icon-name <存储名>` | `DELETE /v1/bundles/icons` | 删除图标，名字**带扩展名** |
 | `bundle doc get --name <ns/name>` | `GET /v1/bundles/document` | 读取平台说明文档 |
-| `bundle doc set --name <ns/name> --file README.md` | `PUT /v1/bundles/document` | 用 UTF-8 Markdown 覆盖说明文档；空文件即清空 |
+| `bundle doc set --name <ns/name> --file 使用文档.md` | `PUT /v1/bundles/document` | 用用户使用文档覆盖平台说明；空文件即清空。不要传 README.md |
 | `bundle upload` | `POST /v1/bundles/versions` | 上传 JAR 版本（multipart），见下文 |
 | `config` | — | 读写 `~/.buildifyrc`，见下表 |
 
@@ -293,7 +299,7 @@ buildify-publish --json config profiles
 
 | 文件 | 用途 | 对应关系 |
 |---|---|---|
-| `icons/cover.svg`（或 `cover.png` 等） | 软件包封面 | `bundle create` / `bundle update` 的 `--icon` |
+| `icons/cover.svg`（或 `cover.png` 等） | 软件包封面 | 仅 `bundle create` 的 `--icon` |
 | `icons/<图标名>.<扩展名>` | 节点图标 | 文件名 = 节点 `icon` 值 = 平台存储名，如 `icons/DingTalk.svg` ↔ `"icon": "DingTalk.svg"` |
 
 图标名只能用字母、数字、`_`、`-`，`cover` 留给封面。`bundle.json` 里引用的每个非
@@ -302,6 +308,7 @@ buildify-publish --json config profiles
 
 ### 找图
 
+**只在创建软件包时做。** 发布已有软件包的新版本时不要找图、不要下载、不要上传。
 软件包封面和节点图标都按下面的顺序找，**不要自己画 SVG**：
 
 1. 用户给了图片就用用户的。
@@ -332,6 +339,8 @@ buildify-publish --json config profiles
 
 ### 上传图标
 
+**只在 `bundle create` 成功之后做这一次。** 发布新版本时不要执行下面的命令，也不要 `bundle update --icon`。
+
 ```bash
 # 节点图标：--icon-name 取文件名去掉扩展名，平台存储名 = 图标名 + 原扩展名，同名覆盖
 for f in icons/*; do
@@ -340,13 +349,10 @@ for f in icons/*; do
 done
 buildify-publish --json bundle icons --name acme/dingtalk     # 核对 bundle.json 里每个非 default.svg 的 icon 都在列表里
 
-# 封面：新包在 bundle create 时带 --icon，已有的包用 bundle update
-buildify-publish bundle update --name acme/dingtalk --icon icons/cover.svg
-
 buildify-publish bundle icon delete --name acme/dingtalk --icon-name DingTalk.svg   # 删除要带扩展名
 ```
 
-图标上传依赖软件包已存在；新包先 `bundle create` 再传节点图标。
+封面在 `bundle create --icon` 时一起上传，不要再 `bundle update --icon`。节点图标依赖软件包已存在，所以先 `bundle create` 再执行上面的循环。之后发布新版本都不再碰图标。
 
 ## 发布流程
 
@@ -355,28 +361,27 @@ buildify-publish bundle icon delete --name acme/dingtalk --icon-name DingTalk.sv
 | 步骤 | 动作 |
 |---|---|
 | 1 | `buildify-publish --json key test`，向用户确认 `tenantName` 就是目标工作空间 |
-| 2 | `bundle info --name <bundleName>`。存在就跳到第 4 步 |
-| 3 | 不存在时建包：先按[找图](#找图)准备 `icons/cover.*`，再按下文「新建软件包」创建 |
-| 4 | 图标：`icons/` 与 `bundle.json` 的 `icon` 一一对应（缺图按[找图](#找图)补，找不到改回 `default.svg`）；上传节点图标，封面缺失或有变化时 `bundle update --icon`，见[上传图标](#上传图标) |
-| 5 | 读当前版本：`mvn -q -Dexpression=project.version -DforceStdout help:evaluate`，按 SemVer 修改 `pom.xml` 的 `<version>` |
-| 6 | 重写 `CHANGELOG.md`，仅本 bundle、本版本一节 |
-| 7 | 更新 README（平台使用文档，给用户和编排 Agent）：对照本版本逐项改适用、凭证类型、每个节点的何时使用 / 参数 / 输出路径 / 出口、错误码。CHANGELOG 里提到的变化都要体现。节点增删或对接范围变了时，按[软件名称与软件描述](#软件名称与软件描述)重写，经用户确认后 `bundle update --display-name / --summary`，并同步 README 标题和第一段 |
-| 8 | `validate_bundle.py --strict` 0 ERROR / 0 WARNING（含 README 节点与错误码、图标文件检查），再构建：`mvn -q clean package`（monorepo 用 `mvn -pl <artifact> -am clean package -DskipTests`，**必须含 `clean`**） |
-| 9 | **先同步文档**：`bundle doc set --file README.md`，再用 `bundle doc get` 确认平台上是本次内容 |
-| 10 | `bundle upload`，必须带 `--release-notes-file` |
-| 11 | `bundle info` 核对版本、releaseNote 与 latest 标记 |
+| 2 | `bundle info --name <bundleName>`。存在就跳到第 4 步，**不要**找图标、**不要**上传图标 |
+| 3 | 不存在时建包：按[找图](#找图)准备 `icons/`，再按下文「新建软件包」创建并上传封面和节点图标。这是唯一查找、上传图标的步骤 |
+| 4 | 读当前版本：`mvn -q -Dexpression=project.version -DforceStdout help:evaluate`，按 SemVer 修改 `pom.xml` 的 `<version>` |
+| 5 | 重写 `CHANGELOG.md`，仅本 bundle、本版本一节 |
+| 6 | 更新 `使用文档.md`（用户使用文档，给用户和编排 Agent）：对照本版本逐项改适用、凭证类型、每个节点的何时使用 / 参数 / 输出路径 / 出口、错误码。CHANGELOG 里提到的变化都要体现。不要改 README 来代替这份文档。节点增删或对接范围变了时，按[软件名称与软件描述](#软件名称与软件描述)重写，经用户确认后 `bundle update --display-name / --summary`，并同步使用文档标题和第一段 |
+| 7 | `validate_bundle.py --strict` 0 ERROR / 0 WARNING（含使用文档的节点与错误码、图标文件检查），再构建：`mvn -q clean package`（monorepo 用 `mvn -pl <artifact> -am clean package -DskipTests`，**必须含 `clean`**） |
+| 8 | **先同步用户使用文档**：`bundle doc set --file 使用文档.md`，再用 `bundle doc get` 确认平台上是本次内容。不要传 `README.md` |
+| 9 | `bundle upload`，必须带 `--release-notes-file` |
+| 10 | `bundle info` 核对版本、releaseNote 与 latest 标记 |
 
 必须先 `clean` 再 `package`，避免旧 JAR / 过时 class 混入发布产物。
 
-文档在上传 JAR 之前同步，用户和编排 Agent 拿到新版本时看到的已经是对应内容。第 10 步失败时修复后重传即可；
-决定放弃这次发布时，用上一版 README（`git show <上次发布的提交>:README.md > /tmp/README.prev.md`）
+文档在上传 JAR 之前同步，用户和编排 Agent 拿到新版本时看到的已经是对应内容。第 9 步失败时修复后重传即可；
+决定放弃这次发布时，用上一版使用文档（`git show <上次发布的提交>:使用文档.md > /tmp/使用文档.prev.md`）
 再执行一次 `doc set` 回退，不要让平台文档描述一个不存在的版本。
 
 ### 新建软件包
 
 `bundle info` 返回 404 时说明平台上还没有这个包。按下文[软件名称与软件描述](#软件名称与软件描述)
 根据**已经实现或即将实现的节点**起草，用确认表给用户看**一次**，等确认再执行命令。
-不要自己编名字，也不要照抄 README 标题或「xxx 工具」。
+不要自己编名字，也不要照抄使用文档标题或「xxx 工具」。确认表通过后，按[找图](#找图)准备封面和节点图标，再创建并上传。发布后续版本时跳过找图和上传。
 
 ```markdown
 将创建软件包：
@@ -402,6 +407,7 @@ buildify-publish --json bundle create --namespace acme --name dingtalk-robot \
   --display-name '钉钉群机器人' \
   --summary '对接钉钉（DingTalk）自定义群机器人 Webhook：向群聊发送文本、Markdown、链接和 ActionCard 卡片消息，支持 @ 指定成员或所有人，加签校验。用于告警通知、审批结果、日报推送。不含企业内部应用的通讯录、审批（请用「钉钉应用」）。' \
   --icon icons/cover.svg                                        # 找不到图时 cover.svg 为下载的默认图标
+# 接着按「上传图标」把节点图标传上去。封面已随 --icon 上传，不要再 update --icon
 ```
 
 `namespace create` 返回 409 表示该命名空间已被其他工作空间占用，请用户换一个，并同步修改
@@ -411,7 +417,7 @@ buildify-publish --json bundle create --namespace acme --name dingtalk-robot \
 
 控制台「开发中心 → 软件包」里的**软件名称**是 `--display-name`，**软件描述**是 `--summary`。
 这两项会出现在 `buildify bundle list` 的结果里，是编排 Agent 判断「用哪个包实现需求」的主要依据；
-选中之后才去看 `bundle nodes` 和 README。写不清楚，后续编排就会选错包、漏包，或者误判环境里没有对应能力。
+选中之后才去看 `bundle nodes` 和用户使用文档。写不清楚，后续编排就会选错包、漏包，或者误判环境里没有对应能力。
 
 #### 编排 Agent 怎么用这两项
 
@@ -465,7 +471,7 @@ buildify-publish --json bundle create --namespace acme --name dingtalk-robot \
 - 只写当前版本**已经有**的节点能力，不写计划中的功能
 - 中文名、英文名、别名、动作、场景这些搜包关键词，必须出现在名称或描述里，否则 `-k` 搜不到
 - 不写营销词（强大、便捷、一站式、高效），不写实现细节（Java、Vert.x、fat JAR、SDK 版本）
-- 不写用法、参数、错误码，这些在 README 里
+- 不写用法、参数、错误码，这些在 `使用文档.md` 里
 
 | | 软件名称 | 软件描述 |
 |---|---|---|
@@ -476,14 +482,14 @@ buildify-publish --json bundle create --namespace acme --name dingtalk-robot \
 | ❌ | 钉钉工具 | 钉钉相关功能 |
 | ❌ | DingTalk Bundle | 基于 Java 的高效钉钉插件，一站式解决消息问题 |
 
-README 标题用软件名称，第一段（标题下面那句）与软件描述逐字相同，这样 `bundle list` 和 `bundle doc` 看到的是同一段话。
+使用文档标题用软件名称，第一段（标题下面那句）与软件描述逐字相同，这样 `bundle list` 和 `bundle doc` 看到的是同一段话。
 
 **节点 `label` / `summary`（选节点用）**：软件描述负责选包；目录里的节点文案负责选节点。
 `label` 写中文短名（「发送文本」「通用调用」「接收 Webhook」），不要用类名 `SendTextMessage`。
 `summary` ≤ 10 字，写这颗节点做什么（「发群消息」「按文档调接口」），不要留「待补充」。
 
 **什么时候更新**：节点增删、对接范围变化（新增触发器、通用调用、新的接入方式）时，同一次发布里用
-`bundle update --display-name / --summary` 改平台信息，并同步 README 标题和第一段；先把新旧内容列给用户确认。
+`bundle update --display-name / --summary` 改平台信息，并同步使用文档标题和第一段；先把新旧内容列给用户确认。不在这一步换图标。
 
 ### 上传
 
@@ -513,13 +519,12 @@ CI 用 `BUILDIFY_PUBLISH_API_KEY`（忽略本机 profile）或 `BUILDIFY_PUBLISH
 ```bash
 buildify-publish bundle update --name official/wecom-bot --display-name '企业微信群机器人' \
   --summary '对接企业微信（WeCom）群机器人 Webhook：向群聊发送文本、Markdown、图片、图文和模板卡片消息，支持 @ 成员。用于告警通知、日报推送。不含应用消息与通讯录（请用「企业微信应用消息」）。'
-buildify-publish bundle update --name official/wecom-bot --icon ./bundle-wecom-bot/icons/cover.svg   # 换封面图标
-buildify-publish bundle doc set --name official/wecom-bot --file ./bundle-wecom-bot/README.md
+buildify-publish bundle doc set --name official/wecom-bot --file ./bundle-wecom-bot/使用文档.md
 buildify-publish --json bundle doc get --name official/wecom-bot   # 确认已同步
 ```
 
-`bundle update` 只改传入的字段。`bundle doc set` 整份覆盖，内容上限约 4Mi 字符。
-只改了 README、没有代码变化时，单独 `doc set` 即可，不必发新版本。
+`bundle update` 只改传入的字段。`bundle doc set` 整份覆盖，内容上限约 4Mi 字符，文件必须是 `使用文档.md`。
+只改了使用文档、没有代码变化时，单独 `doc set` 即可，不必发新版本。发布时不上传图标。
 
 ## 源码版本管理
 

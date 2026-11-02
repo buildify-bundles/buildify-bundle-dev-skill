@@ -29,7 +29,7 @@ Bundle 开发进度：
 - [ ] 3. 实现 FlowNode（遵守 coding-rules.md）
 - [ ] 4. 按需实现凭证 / MethodExecutor / Node Service
 - [ ] 5. 确认 META-INF/services/ 已注册实现类
-- [ ] 6. 编写 README.md（平台使用文档：用户查看 + 编排 Agent 用节点）与 CHANGELOG.md；按需准备 icons/
+- [ ] 6. 编写 使用文档.md（平台用户使用文档：用户查看 + 编排 Agent 用节点）与 CHANGELOG.md
 - [ ] 7. 校验 → 修复 → 重跑，直到 0 ERROR
 - [ ] 8. mvn clean package
 - [ ] 9. 检查源码仓库：没有 git 仓库或远程地址时，提示用户提供仓库地址
@@ -45,10 +45,10 @@ Bundle 开发进度：
 拿到地址后初始化、补 `.gitignore`、提交并推送；用户不提供就只提醒一次，不阻塞发布，
 不要自己创建远程仓库。细节见 [reference/publishing.md](reference/publishing.md#源码版本管理)。
 
-**发布时**：README 整份同步为平台使用文档，用户查看、编排 Agent 用 `bundle doc` 阅读后编排节点。
+**发布时**：只同步用户使用文档 `使用文档.md`，不要同步 `README.md`。用户在软件包页查看，编排 Agent 用 `bundle doc` 阅读后编排节点。
 按本版本更新：适用、凭证类型、每个节点的何时使用 / 参数 / 输出路径 / 出口、错误码；不要写项目结构、
-构建、ClassLoader。校验通过后，在 `bundle upload` **之前** `bundle doc set --file README.md` 并
-`bundle doc get` 确认，再上传 JAR。章节约定见 [reference/publishing.md](reference/publishing.md#readmemd每个-bundle-必须)。
+构建、ClassLoader。校验通过后，在 `bundle upload` **之前** `bundle doc set --file 使用文档.md` 并
+`bundle doc get` 确认，再上传 JAR。发布已有软件包的新版本时**不查找、不上传图标**。章节约定见 [reference/publishing.md](reference/publishing.md#使用文档md每个-bundle-必须)。
 
 **软件名称与软件描述**（控制台字段，对应 `--display-name` / `--summary`）：编排 Agent 只靠
 `bundle list -k` 命中后再读这两项决定用哪个包。建包前按已有节点起草，用确认表列出名称、描述、
@@ -71,7 +71,7 @@ Bundle 开发进度：
 | **节点间 RPC** | [reference/node-service-rpc.md](reference/node-service-rpc.md) |
 | **热更新 / ClassLoader 泄漏** | [reference/lifecycle.md](reference/lifecycle.md) |
 | **写触发器 / 防背压** | [reference/backpressure.md](reference/backpressure.md)（限流、有界缓冲、429、MQ nack） |
-| **写平台使用文档** | [reference/publishing.md](reference/publishing.md#readmemd每个-bundle-必须)（用户查看 + 编排 Agent 用节点） |
+| **写用户使用文档** | [reference/publishing.md](reference/publishing.md#使用文档md每个-bundle-必须)（`使用文档.md`；用户查看 + 编排 Agent 用节点） |
 | **发布** | [reference/publishing.md](reference/publishing.md) |
 
 ## 工具脚本（执行，勿读源码）
@@ -84,7 +84,7 @@ Bundle 开发进度：
 - 本仓库项目级：`.cursor/skills/buildify-bundle-dev`
 - 全局安装：`~/.cursor/skills/buildify-bundle-dev`
 
-**scaffold_bundle.py** — 生成完整 Bundle 骨架（含 SPI、README、CHANGELOG、`.gitignore`）：
+**scaffold_bundle.py** — 生成完整 Bundle 骨架（含 SPI、使用文档、README、CHANGELOG、`.gitignore`）：
 
 ```bash
 python3 <skill-root>/scripts/scaffold_bundle.py \
@@ -103,9 +103,9 @@ python3 <skill-root>/scripts/scaffold_bundle.py \
 **validate_bundle.py** — 校验命名、SPI、pom、表单、凭证、complete、RPC、资源泄漏、
 参数变更后的重启 / `onParametersUpdated` 热更新；
 `bundle.json` 节点缺 `icon`（默认应为 `"default.svg"`）、自定义 `icon` 在 `icons/` 下没有同名文件、
-`icons/` 下有没人引用的图片、README 漏列节点或凭证类型、README 写入了开发内容、`bundleName` 不符合平台命名规则，
+`icons/` 下有没人引用的图片、使用文档漏列节点或凭证类型、使用文档写入了开发内容、`bundleName` 不符合平台命名规则，
 触发器用了无界队列 / 无界线程池、在循环里直接 `tell*`、用 `tellSuccess` 而不是 `tryTellSuccess`、没有任何限流，
-以及 resources 下的 SVG 记 WARNING（图标放 `icons/` 后用发布 CLI 上传，不要打进 JAR）：
+以及 resources 下的 SVG 记 WARNING（图标放 `icons/`，创建软件包时再上传，不要打进 JAR，发布新版本时不上传）：
 
 ```bash
 python3 <skill-root>/scripts/validate_bundle.py ./my-bundle           # ERROR 时 exit 1
@@ -117,8 +117,9 @@ python3 <skill-root>/scripts/validate_bundle.py ./my-bundle --strict  # WARNING 
 ```
 my-bundle/
 ├── pom.xml                          # buildify-bundle-api scope=provided；release=21；shade+SPI transformer
-├── README.md / CHANGELOG.md         # README 为平台使用文档（用户 + 编排 Agent）；CHANGELOG 给 releaseNote
-├── icons/                           # 可选：cover.* 为软件包封面，其余文件名 = 节点 icon 值；用发布 CLI 上传，不打进 JAR
+├── 使用文档.md                      # 平台用户使用文档，发布时 doc set 同步；README.md 不上传
+├── README.md / CHANGELOG.md        # README 给开发者；CHANGELOG 给 releaseNote
+├── icons/                           # 仅创建软件包时上传：cover.* 为封面，其余文件名 = 节点 icon 值；不打进 JAR
 └── src/main/
     ├── java/.../nodes|methods|credentials/
     └── resources/
@@ -141,14 +142,14 @@ Maven 依赖：`cn.buildify:buildify-bundle-api`（版本见 `templates/project/
    求值后按实际类型处理，文本不要直接 `toJson()` 当请求体
 4. 普通节点输出放 `output`；触发器 payload 放根级，并带 `triggerNodeId`、`eventId`、`workerId`
 5. 凭证类型 PascalCase；`credentialsType` 三处一致；`getCredentials` 用表单字段 `name`
-6. 已知错误用 `FlowNodeException`，`initialize` 参数校验优先用 SDK 的 `Validator`。接口调用失败（HTTP 非 2xx 或业务码非 0）时用脚手架生成的 `HttpErrors.httpError` / `apiError`，把 `statusCode` 和脱敏后的 `body` 放进 `msg.error.metadata`；代码中的错误码都要写进 README「错误码」一节。触发器遵守
+6. 已知错误用 `FlowNodeException`，`initialize` 参数校验优先用 SDK 的 `Validator`。接口调用失败（HTTP 非 2xx 或业务码非 0）时用脚手架生成的 `HttpErrors.httpError` / `apiError`，把 `statusCode` 和脱敏后的 `body` 放进 `msg.error.metadata`；代码中的错误码都要写进使用文档「错误码」一节。触发器遵守
    `isTest()` / `createTriggerMessage(payload, eventId)` / `complete`（位置可按说明调整）/ `destroy()`。`eventId` 同时写入 payload，
    `triggerNodeId` 取 `getWorkflowNodeId()`，`workerId` 取 `getWorkerId()`
-7. 软件包封面和节点图标依次从用户提供、厂商官网、图标站（Simple Icons / Iconify / svgl）找 SVG，
+7. **只在创建软件包时**找图标并上传。依次从用户提供、厂商官网、图标站（Simple Icons / Iconify / svgl）找 SVG，
    不要自己画；都没有时用默认图标 `https://bundles.buildify.cn/icons/default.svg`：
-   封面下载它存为 `icons/cover.svg` 上传，节点写 `"icon": "default.svg"`（平台自带的就是这张图）。图片放 Bundle 根目录 `icons/`：
+   封面下载它存为 `icons/cover.svg`，随 `bundle create --icon` 上传；节点写 `"icon": "default.svg"`（平台自带的就是这张图）。图片放 Bundle 根目录 `icons/`：
    封面叫 `cover.*`，节点图标的文件名与 `icon` 值逐字一致（`icons/DingTalk.svg` ↔ `"icon": "DingTalk.svg"`），
-   并向用户列出文件、用途和来源。图标不打进 JAR、不放 `src/main/resources`，见
+   并向用户列出文件、用途和来源。发布已有软件包的新版本时不查找、不上传图标。图标不打进 JAR、不放 `src/main/resources`，见
    [reference/publishing.md](reference/publishing.md#命名与图标)
 8. 需要人逐项填写的数组用 `FixedCollection`（可增删），不要用 `JsonEditor` 手写 JSON 数组
 9. 参数变更要么 `isRestartRequired` 返回 `true` 并重启，要么 `onParametersUpdated` 用新参数重新赋值。路由、cron、连接必须重启
@@ -164,6 +165,6 @@ Maven 依赖：`cn.buildify:buildify-bundle-api`（版本见 `templates/project/
 
 | 目录 | 内容 |
 |---|---|
-| `templates/project/` | `pom.xml`、`bundle.json`、README / CHANGELOG 骨架 |
+| `templates/project/` | `pom.xml`、`bundle.json`、使用文档 / README / CHANGELOG 骨架 |
 | `templates/java/` | Node / GenericApiNode / Trigger / Webhook / CredentialsProvider / MethodExecutor，以及接口失败处理 `HttpErrors`、触发器背压 `TriggerGuard`（生成到 `support/`） |
 | `templates/forms/` | 节点 / 通用调用 / 触发器 / Webhook / 凭证 properties JSON |

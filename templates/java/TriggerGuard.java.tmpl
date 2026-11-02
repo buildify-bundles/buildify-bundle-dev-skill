@@ -1,0 +1,106 @@
+package {{PACKAGE}}.support;
+
+import cn.buildify.bundle.api.Context;
+import cn.buildify.bundle.api.status.NodeStatus;
+
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicLong;
+
+/**
+ * 触发器背压：每秒限流（令牌桶）、防止上一轮未结束又开始、丢弃计数与节流后的状态提示。
+ * 纯 JDK 实现，不持有线程；destroy() 时调用 {@link #reset()}。
+ */
+public final class TriggerGuard {
+
+    private static final long STATUS_INTERVAL_NANOS = TimeUnit.SECONDS.toNanos(5);
+
+    private final AtomicBoolean running = new AtomicBoolean();
+    private final AtomicLong dropped = new AtomicLong();
+    private volatile long lastStatusNanos;
+    private volatile long lastDropNanos;
+    private volatile boolean degraded;
+
+    private int permitsPerSecond;
+    private double tokens;
+    private long lastRefillNanos = System.nanoTime();
+
+    public TriggerGuard(int permitsPerSecond) {
+        setPermitsPerSecond(permitsPerSecond);
+    }
+
+    /** 参数热更新时调用；{@code <= 0} 表示不限速 */
+    public synchronized void setPermitsPerSecond(int permitsPerSecond) {
+        this.permitsPerSecond = Math.max(0, permitsPerSecond);
+        this.tokens = this.permitsPerSecond;
+        this.lastRefillNanos = System.nanoTime();
+    }
+
+    /** 令牌桶：容量等于每秒上限，允许 1 秒的突发 */
+    public synchronized boolean tryAcquire() {
+        if (permitsPerSecond <= 0) {
+            return true;
+        }
+        long now = System.nanoTime();
+        tokens = Math.min(permitsPerSecond,
+                tokens + (now - lastRefillNanos) * permitsPerSecond / (double) TimeUnit.SECONDS.toNanos(1));
+        lastRefillNanos = now;
+        if (tokens < 1) {
+            return false;
+        }
+        tokens -= 1;
+        return true;
+    }
+
+    /**
+     * 能否发出一条新事件：下游背压中或超过每秒上限时计入丢弃并返回 {@code false}。
+     * 推送型丢弃、Webhook 返回 429、拉取型跳过本轮。
+     */
+    public boolean admit(Context context) {
+        if (context.isBackpressured() || !tryAcquire()) {
+            recordDropped(context);
+            return false;
+        }
+        return true;
+    }
+
+    /** 防重叠：上一轮仍在执行时返回 {@code false}，本轮跳过；成功后必须在 finally 中 {@link #exit()} */
+    public boolean tryEnter() {
+        return running.compareAndSet(false, true);
+    }
+
+    public void exit() {
+        running.set(false);
+    }
+
+    /** 记一次丢弃；状态最多每 5 秒刷新一次，避免高频 setStatus */
+    public void recordDropped(Context context) {
+        long total = dropped.incrementAndGet();
+        long now = System.nanoTime();
+        lastDropNanos = now;
+        if (!degraded || now - lastStatusNanos >= STATUS_INTERVAL_NANOS) {
+            degraded = true;
+            lastStatusNanos = now;
+            context.setStatus(NodeStatus.builder().color("yellow").text("限流丢弃 " + total + " 条").build());
+        }
+    }
+
+    /** 事件成功发出后调用：距上次丢弃超过 5 秒才恢复绿色状态 */
+    public void recordEmitted(Context context, String healthyText) {
+        if (degraded && System.nanoTime() - lastDropNanos >= STATUS_INTERVAL_NANOS) {
+            degraded = false;
+            context.setStatus(NodeStatus.builder().color("green").text(healthyText).build());
+        }
+    }
+
+    public long dropped() {
+        return dropped.get();
+    }
+
+    public void reset() {
+        running.set(false);
+        dropped.set(0);
+        degraded = false;
+        setPermitsPerSecond(permitsPerSecond);
+    }
+}

@@ -1,7 +1,8 @@
 {
   "defaultValue": {
     "cron": "0 */5 * * * ?",
-    "timezone": "Asia/Shanghai"
+    "timezone": "Asia/Shanghai",
+    "maxPerSecond": 0
   },
   "properties": [
     {
@@ -20,6 +21,17 @@
         { "label": "Asia/Shanghai", "value": "Asia/Shanghai" },
         { "label": "UTC", "value": "UTC" }
       ]
+    },
+    {
+      "name": "maxPerSecond",
+      "label": "每秒最多触发",
+      "uiComponent": "InputNumber",
+      "hint": "0 表示不限速。设为正整数后按该速率限速；下游处理不过来时仍会丢弃并计数，节点状态显示黄色",
+      "typeOptions": {
+        "min": 0,
+        "max": 1000,
+        "style": "width: 200px"
+      }
     }
   ]
 }

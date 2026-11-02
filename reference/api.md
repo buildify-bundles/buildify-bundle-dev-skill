@@ -195,9 +195,17 @@ JsonValue payload = JsonValueFactory.objectNode()
     .put("eventId", eventId)                           // 例：88724f81-e1a7-47cf-9105-0bffd00a5e98
     .put("workerId", context.getWorkerId());           // 例：wkr-dk7s8awx；不适用时 null
 Message<JsonValue> msg = context.createTriggerMessage(payload, eventId);
-context.tellSuccess(msg);
-context.complete(msg); // 必须且只调一次。特殊触发器可按说明挪到真正结束处
+try {
+    if (!context.tryTellSuccess(msg)) { // 背压中或邮箱已满：没有入队
+        guard.recordDropped(context);   // 丢弃计数；Webhook 改为返回 429，MQ 改为 nack
+    }
+} finally {
+    context.complete(msg); // 必须且只调一次。特殊触发器可按说明挪到真正结束处
+}
 ```
+
+触发器一律用 `tryTellSuccess` / `tryTellNext`，不用 `tellSuccess`：后者在下游过载时会被引擎丢弃，
+触发器感知不到。背压规则见 [backpressure.md](backpressure.md)。
 
 对触发器消息，`complete` 只记录触发器节点的执行次数、QPS，以及从创建消息到 `complete` 的耗时，
 不调用时这些指标恒为 0，但不会让流程卡住。框架不去重，重复调用会重复计数。
@@ -209,6 +217,17 @@ SDK `Context.createTriggerMessage` 的 javadoc 示例只写了 `tellSuccess`，�
 
 自动注入（`setHeaderIfAbsent` 语义）：`CORRELATION_ID`（等于传入的 `eventId`）、
 `BEGIN_RUN_NANOS`（纳秒时刻，不受时钟回拨影响）。
+
+### 背压（bundle-api 3.1.0 起）
+
+| 方法 | 说明 |
+|------|------|
+| `boolean isBackpressured()` | 所属流程邮箱、任一直接下游节点邮箱过载，Worker 执行池饱和，或全局积压超过高水位时为 `true`。按高低水位切换，不抖动 |
+| `boolean tryTellSuccess(msg)` / `tryTellNext(msg, relations)` | 背压中或流程邮箱已满时**不入队**并返回 `false`，不回调 `onFailure`；`true` 表示已入队 |
+| `createTriggerMessage(payload, eventId, MsgCallback)` | 带回调的触发消息。下游拒收（过载、流程停止）或处理失败时调 `onFailure`，用于 MQ nack。回调随 `MessageBuilder.fromMessage` 逐跳继承，`withPayload` 新建的消息不继承 |
+
+返回 `false` 时消息没有发出，仍要按原规则 `complete(msg)`。
+旧版 Worker 没有这些方法，用 3.1.0 编译的 Bundle 部署到旧 Worker 会报 `NoSuchMethodError`。
 
 ### 响应时间统计
 
@@ -229,7 +248,8 @@ if (snapshot.path("found").asBoolean()) {
 ```
 
 字段：`found`、`workflowId`、`workflowNodeId`、`qps`、`avgResponseTimeMs`、`maxResponseTimeMs`、
-`minResponseTimeMs`、`backlog`、`executedCount`、`queueFull`、`outputRelations`、`collectedAt`。
+`minResponseTimeMs`、`backlog`、`executedCount`、`queueFull`、`rejectedCount`（邮箱累计拒收数，3.1.0 起）、
+`outputRelations`、`collectedAt`。
 **仅限本 Worker 进程**，跨 Worker 查询返回 `found=false`。
 
 ## Node Service RPC（节点间调用）

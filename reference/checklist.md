@@ -8,10 +8,11 @@
 - [ ] 使用 `maven.compiler.release=21` 而非 `source`/`target`
 - [ ] `maven-shade-plugin` 配置了 `ServicesResourceTransformer`
 - [ ] `bundle.json` 位于 `src/main/resources` 根目录
-- [ ] 每个节点 `icon` 为 `"default.svg"`，或是已用 `bundle icon upload` 上传的存储名（如 `HttpTrigger.svg`）
-- [ ] 图标文件放在 Bundle 根目录 `icons/`，未放进 `src/main/resources`、未打进 JAR
+- [ ] 每个节点 `icon` 为 `"default.svg"`，或是 `icons/` 下同名文件的文件名（如 `icons/DingTalk.svg` ↔ `"DingTalk.svg"`）
+- [ ] 图标文件放在 Bundle 根目录 `icons/`，未放进 `src/main/resources`、未打进 JAR；`icons/` 下没有无人引用的图片
+- [ ] 🔍 图标来自用户、厂商官网或图标站（Simple Icons / Iconify / svgl），不是自己画的；已向用户列出文件、用途和来源
 - [ ] `bundle.json` 的 `bundleName` 为 `命名空间/包名`，两段只含小写字母、数字和 `. _ -`
-- [ ] 模块根目录存在 `README.md` 与 `CHANGELOG.md`
+- [ ] 模块根目录存在 `README.md`（平台使用文档）与 `CHANGELOG.md`
 
 ## FlowNode
 
@@ -66,6 +67,12 @@
       `createTriggerMessage` 的第二个参数相同（即消息头 `__correlationId`）
 - [ ] 触发 payload **未**再包一层 `output`，业务字段直接在根级
 - [ ] `destroy()` 中取消了定时任务 / 注销了 HTTP 路由
+- [ ] 发消息用 `context.tryTellSuccess` / `tryTellNext`，不用 `tellSuccess`；返回 `false` 时
+      丢弃计数（推送型）、跳过本轮（拉取型）、返回 429（Webhook）或 nack（MQ），见 [backpressure.md](backpressure.md)
+- [ ] 使用 `TriggerGuard` + 表单 `maxPerSecond`（默认 `0` 不限速），轮询类防重叠（`tryEnter` / `exit`）且每轮条数有上限
+- [ ] 🔍 本地缓冲只用有界队列（`ArrayBlockingQueue` 等），没有 `new LinkedBlockingQueue<>()`、
+      `ConcurrentLinkedQueue`、`Executors.newFixedThreadPool/newCachedThreadPool`；`destroy()` 中清空缓冲并 `guard.reset()`
+- [ ] README 写明了限流行为（丢弃计数 / 429 + `Retry-After`）
 
 ## 凭证
 
@@ -156,11 +163,14 @@
 
 ## README / CHANGELOG
 
-- [ ] `README.md` 含节点一览表格（名称、类型、说明）
-- [ ] 每个节点有参数说明和 JSON 输出字段示例
+- [ ] `README.md` 是平台使用文档（给用户和编排 Agent）：含适用、凭证、节点一览、每个节点一节、错误码
+- [ ] 节点一览列出全部 `name`（编排用）、类型、何时使用
+- [ ] 每个节点一节标题是 `name`；有何时使用、参数表（字段名与表单一致、标明表达式）、输出 JSON 与下游引用路径、Success / Failure
+- [ ] 普通节点成功数据在 `output`；触发器 / Webhook payload 在根级，并写 `triggerNodeId` / `eventId` / `workerId`
+- [ ] 凭证类型标识与 `@CredentialsDescription(type)` 逐字一致；不需要凭证则写明
 - [ ] 含「错误码」一节，覆盖代码中出现的全部错误码（含义 + 排查建议）
-- [ ] 含构建命令（`mvn package`）与产物路径
-- [ ] 关键依赖以表格列出（含版本和 scope）
+- [ ] 未写入项目结构、构建命令、依赖表格、ClassLoader、SPI 等开发内容
+- [ ] 🔍 README 与本版本行为一致；用户和 Agent 只靠这一份就能用节点，不必读源码
 - [ ] `CHANGELOG.md` 仅一节，标题版本与 `pom.xml` `<version>` 一致，正文为用户可见变更
 - [ ] 🔍 CHANGELOG 正文未夹带仓库 / CLI / spec 元信息
 
@@ -174,9 +184,14 @@
 - [ ] 多把发布密钥时命令带 `--profile`；用户未要求时不改 `[publish].current`
 - [ ] 仓库有 `.buildify-workspace` 时，所用密钥的 `tenantId` 与该文件一致
 - [ ] `key test` 返回的 `tenantName` 已向用户确认是目标工作空间
-- [ ] 软件包已存在（`bundle info`）；新包经用户确认名称、显示名、可见性后才 `bundle create`
+- [ ] 软件包已存在（`bundle info`）；新包用确认表列出软件名称、软件描述、搜包关键词、能覆盖 / 不覆盖，经用户确认后才 `bundle create`
+- [ ] 🔍 软件名称是「官方中文名 + 能力」（2–16 字）；软件描述 40–150 字，按「对接对象（含英文名）→ 按节点列出的动作 → 用于场景 → 不含边界（请用「另一包」）」写，无营销词和实现细节
+- [ ] 🔍 搜包用的中文名、英文名、别名、动作、场景都出现在名称或描述里；同一厂商多个包时名称能区分、描述互相用「请用」指向
+- [ ] 节点 `label` 是中文短名（不是类名），`summary` ≤ 10 字且不是「待补充」
+- [ ] 节点增删或对接范围变化时已 `bundle update --display-name / --summary`，README 标题和第一段与软件名称、软件描述一致
+- [ ] 软件包封面 `icons/cover.*` 已随 `bundle create` / `bundle update --icon` 上传；找不到图时用的是 `https://bundles.buildify.cn/icons/default.svg`
 - [ ] 自定义图标已 `bundle icon upload`，`bundle icons` 列表包含每个非 `default.svg` 的 `icon`
-- [ ] 上传后 `bundle doc set --file README.md` 同步了平台说明文档
+- [ ] README 已按本版本更新，并在 `bundle upload` **之前** `bundle doc set --file README.md`，`bundle doc get` 确认已同步
 
 ## 源码版本管理
 

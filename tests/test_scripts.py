@@ -182,6 +182,17 @@ WARNING_MUTATIONS = [
      f"{RES}/bundle.json", '"icon": "default.svg",', "", "缺少 icon"),
     ("icon written as a path",
      f"{RES}/bundle.json", '"icon": "default.svg",', '"icon": "icons/http.svg",', "应为上传后的存储名"),
+    ("custom icon without file in icons/",
+     f"{RES}/bundle.json", '"icon": "default.svg",', '"icon": "DingTalk.svg",',
+     "把图片存为 icons/DingTalk.svg"),
+    ("node missing from README",
+     "README.md", "MyTrigger", "TriggerGone", "未介绍节点 MyTrigger"),
+    ("credential type missing from README",
+     "README.md", "`MyApiCredential`", "", "未写明凭证类型 MyApiCredential"),
+    ("developer internals in README",
+     "README.md", "## 错误码", "## 开发者说明\n\n## 错误码", "不要写入项目结构"),
+    ("placeholder node summary",
+     f"{RES}/bundle.json", '"summary": "处理请求"', '"summary": "待补充"', "不要留「待补充」"),
     ("bundleName breaks platform naming",
      f"{RES}/bundle.json", '"bundleName": "example/demo"', '"bundleName": "Example/Demo"', "命名空间/包名"),
     ("init-only field with expression",
@@ -193,6 +204,22 @@ WARNING_MUTATIONS = [
      '"uiComponent": "Input", "expression": true,', "properties[cron] 只在 initialize() 中读取"),
     ("error code missing from README",
      "README.md", "`MISSING_HOST`", "", "未说明错误码 MISSING_HOST"),
+    ("trigger uses tellSuccess",
+     f"{NODES}/MyTrigger.java", "if (context.tryTellSuccess(triggered)) {",
+     "context.tellSuccess(triggered);\n                if (triggered != null) {", "请用 context.tryTellSuccess"),
+    ("trigger buffers in unbounded queue",
+     f"{NODES}/MyTrigger.java", "    private TriggerGuard guard;",
+     "    private TriggerGuard guard;\n    private final java.util.concurrent.BlockingQueue<Object> buffer ="
+     " new java.util.concurrent.LinkedBlockingQueue<>();", "无界缓冲"),
+    ("trigger uses unbounded executor",
+     f"{NODES}/MyHook.java", "    private Route route;",
+     "    private Route route;\n    private final java.util.concurrent.ExecutorService pool ="
+     " java.util.concurrent.Executors.newFixedThreadPool(4);", "无界线程池"),
+    ("trigger floods downstream in a loop",
+     f"{NODES}/MyTrigger.java", "    private void triggerOnce(Context context) {",
+     "    private void drain(Context context) {\n        while (true) {\n"
+     "            context.tellSuccess(context.createTriggerMessage(null, \"x\"));\n        }\n    }\n\n"
+     "    private void triggerOnce(Context context) {", "while 循环里直接 tell"),
 ]
 
 
@@ -228,6 +255,58 @@ class ValidatorMutationTest(ScriptTestCase):
         result = self.validate(project, "--strict")
         self.assertEqual(result.returncode, 1)
         self.assertIn("不要把节点图标打进 Bundle", result.stdout)
+
+    def test_icon_files_match_bundle_json(self):
+        project = self.copy_full()
+        path = project / RES / "bundle.json"
+        path.write_text(path.read_text(encoding="utf-8")
+                        .replace('"icon": "default.svg"', '"icon": "DingTalk.svg"', 1),
+                        encoding="utf-8")
+        icons = project / "icons"
+        icons.mkdir()
+        (icons / "DingTalk.svg").write_text("<svg/>", encoding="utf-8")
+        (icons / "cover.svg").write_text("<svg/>", encoding="utf-8")
+        self.assertEqual(self.validate(project, "--strict").returncode, 0)
+
+        (icons / "Unused.svg").write_text("<svg/>", encoding="utf-8")
+        result = self.validate(project)
+        self.assertIn("没有节点引用这个图标", result.stdout)
+
+    def test_trigger_without_any_backpressure_is_flagged(self):
+        project = self.copy_full()
+        path = project / NODES / "MyHook.java"
+        text = path.read_text(encoding="utf-8")
+        start = text.index("    private void handleRequest(")
+        end = text.index("    private static void tooManyRequests(")
+        handler = """    private void handleRequest(Context context, RoutingContext rc) {
+        String eventId = UUID.randomUUID().toString();
+        JsonValue payload = JsonValueFactory.objectNode()
+                .put("triggerNodeId", triggerNodeId)
+                .put("eventId", eventId)
+                .put("workerId", workerId);
+        Message<JsonValue> msg = context.createTriggerMessage(payload, eventId);
+        context.tellSuccess(msg);
+        context.complete(msg);
+        rc.response().statusCode(200).end();
+    }
+
+"""
+        text = text[:start] + handler + text[end:]
+        text = text.replace("this.guard = new TriggerGuard(", "int unused = (")
+        text = (text.replace("import com.example.bundle.support.TriggerGuard;\n", "")
+                .replace("    private volatile TriggerGuard guard;\n", "")
+                .replace("        if (guard != null) {\n            guard.reset();\n            guard = null;\n        }\n", ""))
+        path.write_text(text, encoding="utf-8")
+        result = self.validate(project)
+        self.assertEqual(result.returncode, 0, result.stdout)
+        self.assertIn("没有任何限流或背压判断", result.stdout)
+
+    def test_trigger_guard_generated_only_for_triggers(self):
+        self.assertTrue((self.full / SUPPORT / "TriggerGuard.java").is_file())
+        project = self.tmp / "no-trigger"
+        self.assertEqual(run(SCAFFOLD, "--dir", str(project), *BASE_ARGS, "--node", "MyNode")
+                         .returncode, 0)
+        self.assertFalse((project / SUPPORT / "TriggerGuard.java").exists())
 
     def test_map_get_is_not_flagged(self):
         result = self.validate(self.full, "--strict")

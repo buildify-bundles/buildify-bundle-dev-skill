@@ -1,6 +1,6 @@
 # Bundle 编码硬性规范
 
-七条通用规范 + 触发器三条 + 命名一致性表。表单与 API 细节见 `reference/`。
+七条通用规范 + 触发器四条 + 命名一致性表。表单与 API 细节见 `reference/`。
 
 ## 目录
 
@@ -11,7 +11,7 @@
 - [规范 5：凭证标识 PascalCase](#规范-5凭证标识-pascalcase三处逐字一致)
 - [规范 6：已知错误用 FlowNodeException](#规范-6已知错误用-flownodeexception)
 - [规范 7：参数变更必须重启或热更新](#规范-7参数变更必须重启或热更新)
-- [触发器节点三条额外规范](#触发器节点三条额外规范)
+- [触发器节点四条额外规范](#触发器节点四条额外规范)
 - [命名一致性](#命名一致性最常见的低级错误)
 
 ## 规范 1：读参数用 `path()`，绝不用 `get()`
@@ -183,8 +183,13 @@ JsonValue payload = JsonValueFactory.objectNode()
     .put("workerId", workerId)             // context.getWorkerId()，不适用时 null
     .put("cron", cronExpr).put("timestamp", System.currentTimeMillis());
 Message<JsonValue> triggered = context.createTriggerMessage(payload, eventId);
-context.tellSuccess(triggered);
-context.complete(triggered);   // 必须且只调一次：记录触发器的执行次数与耗时。特殊触发器可挪到真正结束处
+try {
+    if (!context.tryTellSuccess(triggered)) {  // 下游过载：没有入队，见触发器规范 4
+        guard.recordDropped(context);
+    }
+} finally {
+    context.complete(triggered);   // 必须且只调一次：记录触发器的执行次数与耗时。特殊触发器可挪到真正结束处
+}
 
 // ❌ 触发器不要包 output
 JsonValue bad = JsonValueFactory.objectNode().put("output", payload);
@@ -328,7 +333,7 @@ public void onParametersUpdated(Context context, JsonValue newParameters, JsonVa
 
 不要 `return false` 却留空 `onParametersUpdated()`，也不要把 `oldParameters` 传进 `applyParameters()`。
 
-## 触发器节点三条额外规范
+## 触发器节点四条额外规范
 
 1. `initialize()` 中用 `context.isTest()` 区分：测试模式立即触发一次，生产模式注册定时任务
    或监听器（Webhook 等被动触发器两种模式都要注册路由）。
@@ -338,6 +343,10 @@ public void onParametersUpdated(Context context, JsonValue newParameters, JsonVa
    必须 `context.complete` 这条新消息，且只调一次（用于统计触发器的执行次数、QPS 与耗时，重复调用会重复计数）。
    普通触发器紧接在 `tell*` 之后；特殊触发器可按说明调整位置，但不能省略。
 3. `destroy()` 中取消定时任务、注销 HTTP 路由。注解必须同时设 `isTrigger=true, hasInput=false`。
+4. 背压：发消息用 `context.tryTellSuccess` / `tryTellNext`，不用 `tellSuccess`（下游过载时被引擎丢弃，触发器感知不到）。
+   用 `support/TriggerGuard` 读取表单 `maxPerSecond`（`0` 表示不限速），轮询类用 `tryEnter` / `exit` 防重叠、每轮条数有上限；
+   本地缓冲只用有界队列。超限时推送型丢弃计数、拉取型跳过本轮、Webhook 返回 429 + `Retry-After`、MQ nack。
+   `destroy()` 中清空缓冲并 `guard.reset()`。详见 [reference/backpressure.md](reference/backpressure.md)。
 
 ## 命名一致性（最常见的低级错误）
 

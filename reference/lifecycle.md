@@ -44,6 +44,8 @@ destroy(context)                          ← 资源释放，必须幂等
 `complete` 的耗时。省略时这些指标恒为 0，下游流程不受影响；框架不去重，重复调用会重复计数。
 普通触发器紧接在 `tell*` 之后调用；特殊触发器按自身说明把调用挪到真正结束的位置
 （耗时才包含等待回执、批量刷出的时间），但不能省略。
+触发器发消息用 `tryTellSuccess`，并按 [backpressure.md](backpressure.md) 限流、防重叠、只用有界缓冲；
+`destroy()` 里还要清空本地缓冲、调 `TriggerGuard.reset()`。
 联调与生产都是节点实例保持到 workflow 停止后统一 `destroy()`。
 
 ## 参数热更新

@@ -327,20 +327,20 @@ schema。后端原样透传，由前端 `ParameterInputList` 遍历 `properties`
 |---|---|---|
 | `bundleName` | 推荐 | `命名空间/包名`，两段都只用小写字母、数字和 `. _ -`；与发布时 `--name` 一致 |
 | 节点 `name` | 是 | 与 `@FlowNodeDescription(name)` 完全一致 |
-| 节点 `label` | 是 | UI 显示名 |
-| `summary` | 否 | **≤10 字**，超长被截断 |
+| 节点 `label` | 是 | 目录和画布上的中文短名（「发送文本」「通用调用」），不要用类名 `SendTextMessage` |
+| `summary` | 否 | **≤10 字**，这颗节点做什么（「发群消息」）；超长被截断。编排 Agent 靠它在包内选节点，不要留「待补充」 |
 | `icon` | 推荐 | 默认 `"default.svg"`。自定义时写平台存储名，如 `"HttpTrigger.svg"` |
 | `parameters` | 否 | 与该节点 `properties` 的 `defaultValue` 对齐；无默认值写 `{}` 或省略 |
 
-每个节点都写 `"icon": "default.svg"`。只有用户明确要换图标时才改：
+节点 `icon` 没有合适图片时写 `"default.svg"`。对接厂商的 Bundle 优先用厂商图标：
 
-1. 用户提供的图片放在 Bundle 根目录 `icons/`（png/jpg/jpeg/gif/webp/svg，≤ 1MB）。
-   不要自己生成 SVG，也不要放进 `src/main/resources` 或打进 JAR。
-2. `buildify-publish bundle icon upload --name <bundleName> --icon-name HttpTrigger --file icons/http.svg`。
-   `--icon-name` 不带扩展名，只能用字母、数字、`_`、`-`。
-3. 节点写 `"icon": "HttpTrigger.svg"`（图标名 + 原文件扩展名），再用 `bundle icons` 确认已上传。
+1. 依次从用户提供、厂商官网品牌资源页、图标站（Simple Icons、Iconify、svgl）找 SVG，
+   都没有就保持 `default.svg`（即 `https://bundles.buildify.cn/icons/default.svg`）。不要自己画 SVG，也不要放进 `src/main/resources` 或打进 JAR。
+2. 图片存为 Bundle 根目录的 `icons/<图标名>.<扩展名>`，**文件名与 `icon` 值逐字一致**，
+   如 `icons/DingTalk.svg` ↔ `"icon": "DingTalk.svg"`。图标名只能用字母、数字、`_`、`-`，`cover` 留给软件包封面。
+3. 发布时按文件名上传：`--icon-name DingTalk --file icons/DingTalk.svg`，再用 `bundle icons` 确认。
 
-完整命令见 [publishing.md](publishing.md#命名与图标)。
+找图来源、下载检查与上传命令见 [publishing.md](publishing.md#命名与图标)。
 
 不需要根级 `credentials` 数组，凭证通过 SPI 自动发现。
 
@@ -362,7 +362,7 @@ schema。后端原样透传，由前端 `ParameterInputList` 遍历 `properties`
 | 12 | 用了 `loadOptions` 却无 `allow-create`/`clearable` | 远程失败时用户完全无法配置 |
 | 13 | `provider=bundle` 省略 `dependsOn` | 必须显式写出，无依赖写 `[]` |
 | 14 | 字段用 `type` 而非 `uiComponent` | 一律 `uiComponent` |
-| 15 | 省略 `icon`，或把图标放进 `src/main/resources` | 默认写 `"icon": "default.svg"`；自定义图标放 `icons/`，用 `bundle icon upload` 上传后写存储名 |
+| 15 | 省略 `icon`，或把图标放进 `src/main/resources` | 默认写 `"icon": "default.svg"`；自定义图标存为 `icons/<icon 值>`（文件名与 `icon` 一致），用 `bundle icon upload` 上传 |
 | 16 | 可传值字段省略 `expression` | 默认 `"expression": true` 与 `"droppable": true`，否则无法写入 `={{ msg.xxx }}`（`CodeEditor` 除外） |
 | 17 | `CredentialSelect` 设了 `expression: true` | 访问凭证不要开表达式 |
 | 18 | 数组让用户手写 JSON | 用 `FixedCollection`，界面可动态添加项 |

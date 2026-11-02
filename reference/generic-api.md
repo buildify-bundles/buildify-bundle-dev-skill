@@ -71,4 +71,5 @@ HTTP 非 2xx 走 Failure，状态码和解析后的响应体放在 `msg.error.me
 错误码前缀来自脚手架的 `--error-prefix`（默认由 `artifactId` 推导），响应里的 Token、密钥等字段已替换为 `***`。
 连接失败、超时、地址无效同样走 Failure，这时 `metadata` 中没有 `statusCode` / `body`。
 
-脚手架写入的 README「通用调用」一节要保留。编排时 Agent 靠这一节和节点表单决定怎么填，不要改字段名。
+脚手架写入的 README「通用调用」一节要保留（含何时使用、参数怎么填、Success / Failure 输出路径）。
+编排 Agent 靠这一节和节点表单决定怎么填，不要改字段名。

@@ -22,8 +22,9 @@
 | 对接三方 HTTP API | `--generic-api ApiCall`，见 [reference/generic-api.md](reference/generic-api.md) |
 | 写节点 | [coding-rules.md](coding-rules.md) |
 | 写表单 | [reference/forms-schema.md](reference/forms-schema.md) |
+| 写触发器 | 限流、有界缓冲、`tryTellSuccess`、Webhook 429，见 [reference/backpressure.md](reference/backpressure.md) |
 | 校验 | `scripts/validate_bundle.py --strict`，0 ERROR 后再 `mvn -q clean package` |
-| 发布 | `buildify-publish` CLI 建命名空间和软件包、传节点图标、上传版本、同步说明文档，见 [reference/publishing.md](reference/publishing.md) |
+| 发布 | `buildify-publish` CLI 建命名空间和软件包（软件名称 / 软件描述按规范写）、把 README 作为平台使用文档同步上去（给用户和编排 Agent 用节点）、传图标并上传版本，见 [reference/publishing.md](reference/publishing.md) |
 | 版本管理 | 开发完成后检查 git 仓库，没有远程地址时请用户提供 |
 
 环境：Python 3.8+、JDK 21+、Maven 3.8+。
@@ -48,7 +49,7 @@ INSTALL.md               # 安装说明
 coding-rules.md          # 节点编码规范
 scripts/                 # scaffold_bundle.py、validate_bundle.py
 templates/               # 工程、Java、表单模板
-reference/               # 表单、API、生命周期、发布
+reference/               # 表单、API、生命周期、触发器背压、发布
 tests/                   # 脚本回归测试
 ```
 

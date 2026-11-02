@@ -38,6 +38,9 @@ PASCAL_CASE = re.compile(r"^[A-Z][A-Za-z0-9]*$")
 SERVICE_NAME = re.compile(r"^[A-Za-z0-9._-]+$")
 BUNDLE_SEGMENT = re.compile(r"^[a-z0-9]+([._-][a-z0-9]+)*$")
 ICON_FILE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]*\.(png|jpe?g|gif|webp|svg)$")
+DEFAULT_ICON = "default.svg"
+COVER_STEM = "cover"
+ICON_MAX_BYTES = 1024 * 1024
 PARAM_FROM_JSON = re.compile(
     r"JsonValueFactory\s*\.\s*fromJson\(\s*\w*[pP]arameters\s*\.\s*path\([^;]*?\.\s*asText\(")
 
@@ -153,7 +156,8 @@ def check_pom(project: Path) -> None:
 
 def check_docs(project: Path) -> None:
     if not (project / "README.md").is_file():
-        err("README.md", "每个 Bundle 必须在模块根目录提供 README.md（节点一览/参数/输出/构建/依赖）")
+        err("README.md", "每个 Bundle 必须在模块根目录提供 README.md（适用/凭证/节点一览/参数/输出/出口/错误码），"
+                        "发布时同步为平台使用文档，供用户和编排 Agent 阅读")
     changelog = project / "CHANGELOG.md"
     if not changelog.is_file():
         warn("CHANGELOG.md", "缺少 CHANGELOG.md，发布时 --release-notes-file 无文件可指向")
@@ -591,6 +595,60 @@ def check_error_codes(project: Path, java_files: list) -> None:
                           % "、".join(missing))
 
 
+def check_icon_files(project: Path, declared: dict) -> None:
+    """icons/ 下的文件名就是 bundle.json 中的 icon（平台存储名），cover.* 是软件包封面。"""
+    icons_dir = project / "icons"
+    used = set()
+    for name, node in declared.items():
+        icon = node.get("icon")
+        if not isinstance(icon, str) or icon == DEFAULT_ICON or not ICON_FILE.match(icon):
+            continue
+        used.add(icon)
+        if Path(icon).stem.lower() == COVER_STEM:
+            warn("bundle.json", f"节点 '{name}' icon '{icon}' 与软件包封面同名；"
+                                f"{COVER_STEM}.* 留给封面，节点图标换个名字")
+        elif not (icons_dir / icon).is_file():
+            warn("bundle.json", f"节点 '{name}' icon '{icon}' 在 icons/ 下没有同名文件；"
+                                f"把图片存为 icons/{icon}，发布时按文件名上传，"
+                                "找不到合适图片就改回 \"default.svg\"")
+    if not icons_dir.is_dir():
+        return
+    for path in sorted(icons_dir.iterdir()):
+        if not path.is_file() or path.name.startswith("."):
+            continue
+        if path.stem.lower() == COVER_STEM:
+            if not ICON_FILE.match(path.name):
+                warn(f"icons/{path.name}", "封面只支持 png/jpg/jpeg/gif/webp/svg")
+        elif not ICON_FILE.match(path.name):
+            warn(f"icons/{path.name}", "文件名只能用字母、数字、_、- 加图片扩展名，"
+                                       "否则无法作为 --icon-name 上传")
+        elif path.name not in used:
+            warn(f"icons/{path.name}", "没有节点引用这个图标；删掉，或在 bundle.json 中写 "
+                                       f"\"icon\": \"{path.name}\"")
+        if path.stat().st_size > ICON_MAX_BYTES:
+            warn(f"icons/{path.name}", "图标超过 1MB，平台会拒绝上传")
+
+
+def check_readme_nodes(project: Path, declared: dict, credential_types: set) -> None:
+    """README 会同步为平台使用文档，给用户和编排 Agent 看。"""
+    readme = project / "README.md"
+    if not readme.is_file():
+        return
+    text = readme.read_text(encoding="utf-8", errors="replace")
+    missing = sorted(n for n in declared if f"`{n}`" not in text)
+    if missing:
+        warn("README.md", "未介绍节点 %s；「节点一览」和对应小节需列出全部节点，"
+                          "编排 Agent 靠 `name` 选用" % "、".join(missing))
+    missing_cred = sorted(c for c in credential_types if f"`{c}`" not in text)
+    if missing_cred:
+        warn("README.md", "未写明凭证类型 %s；编排写入 credentials.type 时必须与此逐字一致"
+                          % "、".join(missing_cred))
+    if re.search(r"^##\s*开发者说明", text, re.M) or "ClassLoader" in text \
+            or re.search(r"^###\s*构建", text, re.M):
+        warn("README.md", "平台使用文档给用户和编排 Agent 看，不要写入项目结构、构建命令、"
+                          "依赖表格、ClassLoader 等开发内容")
+
+
 def check_node_service(jf: JavaFile, is_method_executor: bool = False) -> None:
     code, loc = jf.code, jf.rel
 
@@ -900,6 +958,7 @@ def check_node_code(jf: JavaFile, is_trigger: bool) -> None:
             warn(loc, "主动触发器应在 initialize() 中用 context.isTest() 区分测试/生产模式")
         if "destroy" not in code:
             err(loc, "触发器节点必须实现 destroy() 释放定时任务或路由")
+        check_trigger_backpressure(code, loc)
     else:
         if routed and not re.search(r"put\(\s*\"output\"", code):
             warn(loc, "非触发器节点应把业务结果收敛到 payload 的 output 字段"
@@ -907,6 +966,55 @@ def check_node_code(jf: JavaFile, is_trigger: bool) -> None:
 
     check_relations(jf)
     check_parameter_refresh(jf)
+
+
+UNBOUNDED_BUFFERS = re.compile(
+    r"\bnew\s+(?:[\w.]+\.)?(?P<q>LinkedBlockingQueue|LinkedBlockingDeque|LinkedTransferQueue)"
+    r"\s*(?:<[^>]*>)?\s*\(\s*\)"
+    r"|\bnew\s+(?:[\w.]+\.)?(?P<c>ConcurrentLinkedQueue|ConcurrentLinkedDeque|PriorityBlockingQueue)\b"
+    r"|\bExecutors\s*\.\s*(?P<e>newFixedThreadPool|newCachedThreadPool|newSingleThreadExecutor)\s*\(")
+BACKPRESSURE_SIGNS = re.compile(
+    r"\btryTell(?:Success|Next)\(|\bisBackpressured\(|\bTriggerGuard\b|\bRateLimiter\b"
+    r"|\bSemaphore\b|\bArrayBlockingQueue\b|\btryAcquire\(")
+LOOP_THROTTLE = re.compile(r"\btryAcquire\(|\badmit\(|\boffer\(|\bsleep\(|\bisBackpressured\(|\btryTell")
+
+
+def _block_after(code: str, start: int) -> str:
+    """从 start 之后的第一个 { 起，返回与之配对的代码块（不处理字符串里的花括号）"""
+    open_at = code.find("{", start)
+    if open_at < 0:
+        return ""
+    depth = 0
+    for i in range(open_at, len(code)):
+        if code[i] == "{":
+            depth += 1
+        elif code[i] == "}":
+            depth -= 1
+            if depth == 0:
+                return code[open_at:i + 1]
+    return code[open_at:]
+
+
+def check_trigger_backpressure(code: str, loc: str) -> None:
+    """触发器背压，见 reference/backpressure.md：引擎过载时会丢弃消息，触发器必须自己限流、只用有界缓冲"""
+    unbounded = sorted({m.group("q") or m.group("c") or "Executors." + m.group("e")
+                        for m in UNBOUNDED_BUFFERS.finditer(code)})
+    if unbounded:
+        warn(loc, "触发器使用了无界缓冲或无界线程池（%s）：下游变慢时事件会无限堆在内存里。"
+                  "改用 new ArrayBlockingQueue<>(容量) 并在 offer 失败时丢弃计数，"
+                  "或用 support/TriggerGuard 限流" % "、".join(unbounded))
+    for loop in re.finditer(r"\bwhile\s*\(\s*(?:true|!)", code):
+        body = _block_after(code, loop.end())
+        if re.search(r"\btell(?:Success|Next)\(", body) and not LOOP_THROTTLE.search(body):
+            warn(loc, "触发器在 while 循环里直接 tell*，没有限流或背压判断：会以最快速度灌给下游。"
+                      "循环内先 guard.admit(context)，发消息用 tryTellSuccess")
+            break
+    if "createTriggerMessage(" in code and re.search(r"\btell(?:Success|Next)\(", code):
+        warn(loc, "触发器发消息请用 context.tryTellSuccess / tryTellNext：tellSuccess 在下游过载时"
+                  "会被引擎丢弃，触发器无法感知。返回 false 时丢弃计数、Webhook 返回 429、MQ nack")
+    if not BACKPRESSURE_SIGNS.search(code):
+        warn(loc, "触发器没有任何限流或背压判断（tryTellSuccess / isBackpressured / TriggerGuard / "
+                  "有界队列）。下游处理不过来时会持续堆积，见 reference/backpressure.md")
 
 
 STANDARD_RELATION_CONSTANTS = {"SUCCESS_NAME": "Success", "FAILURE_NAME": "Failure"}
@@ -963,7 +1071,10 @@ def parse_bundle_nodes(data: dict, declared: dict) -> None:
         if not node.get("label"):
             err("bundle.json", f"{where}({name}) 缺少 label")
         summary = node.get("summary") or ""
-        if len(summary) > 10:
+        if not str(summary).strip() or str(summary).strip() in ("待补充", "TODO"):
+            warn("bundle.json", f"{where}({name}) summary 应写这颗节点做什么（≤10 字），"
+                                "编排 Agent 靠它在包内选节点，不要留「待补充」")
+        elif len(summary) > 10:
             warn("bundle.json", f"{where}({name}) summary 建议 ≤ 10 字，当前 {len(summary)} 字")
         icon = node.get("icon")
         if icon is None or (isinstance(icon, str) and not icon.strip()):
@@ -1121,6 +1232,9 @@ def main() -> int:
             rel = svg.relative_to(project)
             warn(str(rel), "不要把节点图标打进 Bundle；移到项目根目录 icons/，"
                            "用 buildify-publish bundle icon upload 上传")
+
+        check_icon_files(project, declared)
+        check_readme_nodes(project, declared, credential_types)
 
         for name in sorted(set(declared) - set(nodes)):
             err("bundle.json", f"声明了节点 '{name}' 但没有对应的 "

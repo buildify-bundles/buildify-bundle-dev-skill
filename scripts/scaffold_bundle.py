@@ -172,30 +172,184 @@ def error_codes_table(args: argparse.Namespace, prefix: str) -> str:
     return "\n".join(lines)
 
 
+def node_rows(args: argparse.Namespace) -> str:
+    kinds = ([(n, "普通节点", "TODO 什么时候选这个节点（不要用类名代替）") for n in args.node]
+             + [(n, "通用调用", "厂商文档里有、但没有专用节点的接口") for n in args.generic_api]
+             + [(n, "触发器", "TODO 何时启动这条流程（定时、轮询…）") for n in args.trigger]
+             + [(n, "Webhook 触发器", "外部 HTTP 请求到达时启动流程") for n in args.webhook])
+    return "\n".join(f"| `{name}` | {kind} | {desc} |" for name, kind, desc in kinds)
+
+
+def credential_section(args: argparse.Namespace) -> str:
+    if not args.credential:
+        return "本软件包节点不需要访问凭证。\n"
+    ctype = args.credential[0]
+    lines = [
+        f"凭证类型标识是 `{ctype}`（编排写入 `credentials.type` 时必须与此逐字一致）。",
+        "",
+        "在控制台「凭证」中创建后，节点里选择这一条；创建后点击「测试连接」确认连通。",
+        "",
+        "| 字段 | 必填 | 说明 |",
+        "|------|------|------|",
+        "| `host` | 是 | 服务地址，不要末尾斜杠 |",
+        "| `apiKey` | 是 | API 密钥，不要写进节点参数或 Header |",
+    ]
+    if len(args.credential) > 1:
+        others = "、".join(f"`{c}`" for c in args.credential[1:])
+        lines += ["", f"同包还有凭证类型 {others}，按节点表单的 `credentialsType` 选用。"]
+    return "\n".join(lines) + "\n"
+
+
+def node_sections(args: argparse.Namespace, prefix: str) -> str:
+    parts = ([_regular_node_readme(n, prefix) for n in args.node]
+             + [_trigger_node_readme(n) for n in args.trigger]
+             + [_webhook_node_readme(n) for n in args.webhook])
+    return "\n".join(parts)
+
+
+def _regular_node_readme(name: str, prefix: str) -> str:
+    return f"""
+## `{name}`
+
+**何时使用**：TODO 一句话。有更合适的专用节点时不要用本节点凑。
+
+### 参数
+
+| 参数 | 必填 | 默认 | 表达式 | 说明 |
+|------|------|------|--------|------|
+| `url` | 是 | — | 是 `={{{{ msg.xxx }}}}` | 请求地址 |
+| `method` | 是 | `GET` | 是 | 请求方法 |
+| `timeout` | 否 | `30` | 否（只在启动时读取） | 超时秒数 |
+| `body` | 否 | — | 是 `={{{{ msg.xxx }}}}` | JSON 正文；GET 不显示 |
+
+### 输出
+
+成功走 **Success**，业务数据在 `output`（不要写到根级）：
+
+```json
+{{
+  "output": {{
+    "statusCode": 200,
+    "body": {{ "id": 1, "name": "example" }}
+  }}
+}}
+```
+
+下游引用：`={{{{ msg.output.statusCode }}}}`、`={{{{ msg.output.body }}}}`。
+
+失败走 **Failure**，状态码和响应体在 `msg.error.metadata`：
+
+```json
+{{
+  "error": {{
+    "code": "{prefix}_HTTP_ERROR",
+    "message": "请求无效（HTTP 400），请检查请求参数。响应：{{\\"errcode\\":40035,\\"errmsg\\":\\"...\\"}}",
+    "metadata": {{
+      "statusCode": 400,
+      "body": {{ "errcode": 40035, "errmsg": "..." }}
+    }}
+  }}
+}}
+```
+
+连接失败、超时同样走 Failure，这时 `metadata` 中没有 `statusCode` / `body`。
+响应中的 Token、密钥等字段写入前已替换为 `***`。
+
+### 编排
+
+- 绑定凭证类型见上文「凭证」
+- 典型上游：Webhook / 触发器 / 上一个查询节点
+- TODO 补一条本节点的真实参数示例（字段名与表单一致）
+"""
+
+
+def _trigger_node_readme(name: str) -> str:
+    return f"""
+## `{name}`
+
+**何时使用**：TODO 用这条触发器启动流程的时机（例如每 5 分钟拉一次增量）。
+
+### 参数
+
+| 参数 | 必填 | 默认 | 表达式 | 说明 |
+|------|------|------|--------|------|
+| `cron` | 是 | `0 */5 * * * ?` | 否（修改会重启） | Quartz Cron |
+| `timezone` | 否 | `Asia/Shanghai` | 否 | 时区 |
+| `maxPerSecond` | 否 | `0` | 否（修改即时生效） | 每秒最多触发次数，`0` 表示不限速 |
+
+触发器没有输入连接点，不要把上游连进来。
+
+### 限流
+
+上一轮还没结束时跳过本轮。`maxPerSecond` 为 `0` 时不按速率丢弃；设为正整数后，超过该值时本次触发**丢弃并计数**。
+下游处理不过来时同样丢弃并计数，节点状态显示黄色「限流丢弃 N 条」，下游恢复后自动转绿。被丢弃的触发不会补发。
+
+### 输出
+
+payload 放在**根级**（不要包 `output`），并带 `triggerNodeId`、`eventId`、`workerId`：
+
+```json
+{{
+  "triggerNodeId": "n-xxxxxxxx",
+  "eventId": "…",
+  "workerId": "…",
+  "triggeredAt": 0
+}}
+```
+
+下游引用：`={{{{ msg.eventId }}}}`、`={{{{ msg.triggeredAt }}}}`。走 **Success**。
+"""
+
+
+def _webhook_node_readme(name: str) -> str:
+    return f"""
+## `{name}`
+
+**何时使用**：外部系统用 HTTP 回调启动流程（Slack、支付、自建服务）。
+
+### 参数
+
+| 参数 | 必填 | 默认 | 表达式 | 说明 |
+|------|------|------|--------|------|
+| `path` | 是 | — | 否（修改会重启并重注册路由） | 监听路径，如 `/webhook/order` |
+| `timeout` | 否 | `5000` | 否 | 超时毫秒 |
+| `maxPerSecond` | 否 | `0` | 否（修改会重启） | 每秒最多接收的请求数，`0` 表示不限速 |
+
+### 响应与限流
+
+| 状态码 | 含义 | 调用方怎么做 |
+|--------|------|--------------|
+| `200` | 已接收，流程已启动 | — |
+| `429` | `maxPerSecond` 大于 0 且超过该值，或下游处理不过来，请求**未处理** | 按 `Retry-After`（秒）退避后重试 |
+| `503` | 节点已停止 | 稍后重试或检查流程是否已发布 |
+| `500` | 处理请求失败 | 查看 Worker 日志 |
+
+### 输出
+
+请求体放在**根级**（不要包 `output`），并带 `triggerNodeId`、`eventId`、`workerId`。
+下游引用请求字段用 `={{{{ msg.xxx }}}}`。走 **Success**；校验失败走 **Failure**。
+"""
+
+
 def generic_api_readme(names: list) -> str:
-    rows = "\n".join(
-        f"| `{name}` | 通用调用 | 文档中尚未做成专用节点的接口 |" for name in names)
+    listed = "、".join(f"`{name}`" for name in names)
     return f"""
 ## 通用调用
 
-厂商文档里有、但还没有专用节点的接口，用下列节点按文档调用。不要另造节点名。
+**何时使用**：厂商文档里有、但本包还没有专用节点的接口。用 {listed}，按文档填下面字段，不要另造节点名。已有专用节点的操作不要走通用调用。
 
-| 节点 | 类型 | 说明 |
-|------|------|------|
-{rows}
-
-| 参数 | 怎么填 |
-|------|--------|
-| `method` | 文档中的 HTTP 方法 |
-| `path` | 文档中的路径，以 `/` 开头，不含域名。支持 `={{{{ msg.xxx }}}}` |
-| `query` | 文档中的查询参数，一项一行 |
-| `headers` | 文档要求的额外请求头。未写鉴权头时自动加 `Authorization: Bearer <凭证 apiKey>` |
-| `body` | 文档中的 JSON 正文。GET 不显示此项 |
+| 参数 | 必填 | 表达式 | 怎么填 |
+|------|------|--------|--------|
+| `method` | 是 | 否 | 文档中的 HTTP 方法 |
+| `path` | 是 | 是 `={{{{ msg.xxx }}}}` | 以 `/` 开头，不含域名 |
+| `query` | 否 | 是 | 文档中的查询参数，一项一行 |
+| `headers` | 否 | 是 | 文档要求的额外请求头。未写鉴权头时自动加 `Authorization: Bearer <凭证 apiKey>` |
+| `body` | 否 | 是 `={{{{ msg.xxx }}}}` | 文档中的 JSON 正文。GET 不显示 |
 
 域名和密钥来自凭证的 `host`、`port`、`apiKey`。`path` 以 `http://` 或 `https://` 开头时当作完整地址。
 
-HTTP 2xx 时输出 `msg.output.statusCode` 与 `msg.output.body`。
-HTTP 非 2xx 走 Failure，状态码和响应体在 `msg.error.metadata.statusCode` 与 `msg.error.metadata.body`。
+成功走 **Success**：`={{{{ msg.output.statusCode }}}}`、`={{{{ msg.output.body }}}}`。
+HTTP 非 2xx 走 **Failure**：`={{{{ msg.error.metadata.statusCode }}}}`、`={{{{ msg.error.metadata.body }}}}`。
 连接失败或超时也走 Failure，这时没有 `statusCode` / `body`。
 """
 
@@ -293,7 +447,7 @@ def main() -> None:
             "nodes": [{
                 "name": node_name,
                 "label": node_name,
-                "summary": "按文档调用" if node_name in generic_names else "待补充",
+                "summary": "按文档调用" if node_name in generic_names else "处理请求",
                 "icon": "default.svg",
                 "parameters": defaults[node_name],
             } for node_name, _, _, _ in node_specs],
@@ -313,6 +467,11 @@ def main() -> None:
             "PACKAGE": args.package,
             "ERROR_PREFIX": error_prefix,
         }), args.force)
+
+    # 触发器背压：限流、防重叠、丢弃计数
+    if args.trigger or args.webhook:
+        write(pkg_path / "support" / "TriggerGuard.java",
+              render("java/TriggerGuard.java.tmpl", {"PACKAGE": args.package}), args.force)
 
     # 凭证：propertiesFile 文件名必须与 @CredentialsDescription(type) 逐字一致
     for cred in args.credential:
@@ -346,14 +505,12 @@ def main() -> None:
     # 文档
     first_node = node_specs[0][0]
     readme = render("project/README.md.tmpl", {
-        "ARTIFACT_ID": args.artifact_id,
-        "NODE_NAME": first_node,
-        "PACKAGE_PATH": "/".join(args.package.split(".")),
-        "ERROR_PREFIX": error_prefix,
+        "NODE_ROWS": node_rows(args),
+        "CREDENTIAL_SECTION": credential_section(args),
+        "NODE_SECTIONS": node_sections(args, error_prefix),
+        "GENERIC_API": generic_api_readme(args.generic_api) if args.generic_api else "",
         "ERROR_CODES": error_codes_table(args, error_prefix),
     })
-    if args.generic_api:
-        readme += generic_api_readme(args.generic_api)
     write(root / "README.md", readme, args.force)
     write(root / "CHANGELOG.md", render("project/CHANGELOG.md.tmpl", {
         "VERSION": args.version,
@@ -363,14 +520,20 @@ def main() -> None:
     write(root / ".gitignore", GITIGNORE, args.force)
 
     print("\n完成。后续步骤：")
-    print("  1. 编辑 src/main/resources/bundle.json 补全 label / summary")
-    print("     节点 icon 默认为 default.svg；自定义图标放 icons/，"
-          "用 buildify-publish bundle icon upload 上传后写存储名")
+    print("  1. 编辑 src/main/resources/bundle.json：节点 label 写成中文短名，summary ≤10 字写清做什么")
+    print("     发布建包时软件名称（--display-name）= 官方中文名+能力；软件描述（--summary）按"
+          "「对接谁：能做什么。用于场景。不含边界」写，见 reference/publishing.md")
+    print("     对接厂商时从官网或图标站找 SVG：封面存 icons/cover.svg，节点图标存 icons/<icon 值>"
+          "（如 icons/DingTalk.svg ↔ \"icon\": \"DingTalk.svg\"）；找不到时封面用 https://bundles.buildify.cn/icons/default.svg，节点保持 default.svg")
     print("  2. 编辑 src/main/resources/properties/*.json 定义表单字段")
     print("  3. 实现节点 onMsg 业务逻辑")
+    if args.trigger or args.webhook:
+        print("     触发器用 support/TriggerGuard 限流、防重叠，发消息用 tryTellSuccess；"
+              "不要用无界队列缓存事件，见 reference/backpressure.md")
     if args.generic_api:
         print("     通用调用节点已生成：未实现的接口按厂商文档填 method/path/query/headers/body")
-    print("  4. 补全 README.md 与 CHANGELOG.md 中的 TODO")
+    print("  4. 按节点补全 README.md（平台使用文档，给用户和编排 Agent 看：何时使用、参数、输出路径、出口）"
+          "与 CHANGELOG.md；不要写项目结构、构建、ClassLoader")
     print(f"  5. python3 {Path(__file__).parent / 'validate_bundle.py'} {root}")
     print("  6. mvn -q clean package")
     print("  7. 没有 git 仓库或远程地址时，请用户提供源码仓库地址后初始化并推送")

@@ -1,5 +1,6 @@
 package {{PACKAGE}}.nodes;
 
+import {{PACKAGE}}.support.TriggerGuard;
 import cn.buildify.bundle.api.Context;
 import cn.buildify.bundle.api.FlowNode;
 import cn.buildify.bundle.api.FlowNodeDescription;
@@ -27,7 +28,10 @@ public class {{NODE_NAME}} implements FlowNode {
 
     private static final Pattern REQUEST_ID = Pattern.compile("[A-Za-z0-9._:-]{1,128}");
 
+    private static final String HEALTHY_TEXT = "监听中";
+
     private Route route;
+    private volatile TriggerGuard guard;
     private String triggerNodeId;
     private String workerId;
 
@@ -38,6 +42,7 @@ public class {{NODE_NAME}} implements FlowNode {
         String path = Validator.of(parameters.path("path").asText(""), "path")
                 .notBlank("path 不能为空")
                 .get();
+        this.guard = new TriggerGuard(parameters.path("maxPerSecond").asInt(0));
 
         this.route = Route.create(Set.of(HttpMethod.POST), path)
                 .timeout(parameters.path("timeout").asInt(5000))
@@ -45,7 +50,7 @@ public class {{NODE_NAME}} implements FlowNode {
                 .handler(rc -> handleRequest(context, rc));
 
         context.getRouter().register(route);
-        context.setStatus(NodeStatus.builder().color("green").text("监听中").build());
+        context.setStatus(NodeStatus.builder().color("green").text(HEALTHY_TEXT).build());
     }
 
     /** 路由属于生命周期资源，任何相关参数变化都必须重启 */
@@ -60,6 +65,16 @@ public class {{NODE_NAME}} implements FlowNode {
     }
 
     private void handleRequest(Context context, RoutingContext rc) {
+        TriggerGuard currentGuard = guard;
+        if (currentGuard == null) {
+            rc.fail(503, "节点已停止");
+            return;
+        }
+        // 先限流再读 body：超过每秒上限或下游背压时直接 429，让调用方稍后重试
+        if (!currentGuard.admit(context)) {
+            tooManyRequests(rc);
+            return;
+        }
         try {
             String body = rc.request().body();
             String requestId = rc.request().getHeader("X-Request-Id");
@@ -77,13 +92,21 @@ public class {{NODE_NAME}} implements FlowNode {
                     .put("clientIp", rc.getClientIP());
 
             Message<JsonValue> msg = context.createTriggerMessage(payload, eventId);
+            boolean accepted;
             try {
-                context.tellSuccess(msg);
+                // tryTellSuccess：下游过载时不入队并返回 false，不能用 tellSuccess（会被引擎静默丢弃）
+                accepted = context.tryTellSuccess(msg);
             } finally {
                 // 必须且只调一次：记录触发器的执行次数、QPS 与耗时（框架不去重）。
                 // 特殊触发器可按说明挪到真正结束处，但不能删除
                 context.complete(msg);
             }
+            if (!accepted) {
+                currentGuard.recordDropped(context);
+                tooManyRequests(rc);
+                return;
+            }
+            currentGuard.recordEmitted(context, HEALTHY_TEXT);
 
             rc.response().statusCode(200)
                     .contentType("application/json")
@@ -96,12 +119,24 @@ public class {{NODE_NAME}} implements FlowNode {
         }
     }
 
+    private static void tooManyRequests(RoutingContext rc) {
+        rc.response().statusCode(429)
+                .putHeader("Retry-After", "1")
+                .contentType("application/json")
+                .write("{\"code\":429,\"msg\":\"too many requests\"}")
+                .end();
+    }
+
     /** 幂等释放：未注销的路由持有 handler lambda，会钉住 ClassLoader */
     @Override
     public void destroy(Context context) {
         if (route != null) {
             context.getRouter().unregister(route);
             route = null;
+        }
+        if (guard != null) {
+            guard.reset();
+            guard = null;
         }
     }
 

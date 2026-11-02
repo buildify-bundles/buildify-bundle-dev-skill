@@ -1,5 +1,6 @@
 package {{PACKAGE}}.nodes;
 
+import {{PACKAGE}}.support.TriggerGuard;
 import cn.buildify.bundle.api.Context;
 import cn.buildify.bundle.api.FlowNode;
 import cn.buildify.bundle.api.FlowNodeDescription;
@@ -20,7 +21,10 @@ import java.util.concurrent.ScheduledFuture;
         hasInput = false)
 public class {{NODE_NAME}} implements FlowNode {
 
+    private static final String HEALTHY_TEXT = "已调度";
+
     private ScheduledFuture<?> scheduledFuture;
+    private TriggerGuard guard;
     private String triggerNodeId;
     private String workerId;
 
@@ -28,6 +32,7 @@ public class {{NODE_NAME}} implements FlowNode {
     public void initialize(Context context, JsonValue parameters) {
         this.triggerNodeId = context.getWorkflowNodeId();
         this.workerId = context.getWorkerId();
+        this.guard = new TriggerGuard(parameters.path("maxPerSecond").asInt(0));
         String cron = parameters.path("cron").asText("0 */5 * * * ?");
         String timezone = parameters.path("timezone").asText("Asia/Shanghai");
 
@@ -38,7 +43,7 @@ public class {{NODE_NAME}} implements FlowNode {
         }
 
         this.scheduledFuture = context.schedule(() -> triggerOnce(context), cron, timezone);
-        context.setStatus(NodeStatus.builder().color("green").text("已调度").build());
+        context.setStatus(NodeStatus.builder().color("green").text(HEALTHY_TEXT).build());
     }
 
     /** cron 变化需要取消旧任务重新注册，交给重启流程处理 */
@@ -49,12 +54,27 @@ public class {{NODE_NAME}} implements FlowNode {
     }
 
     @Override
+    public void onParametersUpdated(Context context, JsonValue newParameters, JsonValue oldParameters) {
+        guard.setPermitsPerSecond(newParameters.path("maxPerSecond").asInt(0));
+    }
+
+    @Override
     public void onMsg(Context context, Message<?> message) {
         // 触发器无输入连接点，不会收到消息
     }
 
     private void triggerOnce(Context context) {
+        // 上一轮还没结束（例如轮询分页很慢）就跳过本轮，避免多轮叠加把事件堆在内存里
+        if (!guard.tryEnter()) {
+            guard.recordDropped(context);
+            return;
+        }
         try {
+            // 拉取型触发器（轮询、MQ、数据库监听）：每轮最多发 maxEventsPerTick 条，剩下的留给下一轮；
+            // admit 返回 false 时停止本轮并暂停消费，不要先拉到内存再慢慢发
+            if (!guard.admit(context)) {
+                return;
+            }
             // 触发器 payload 直接放根级业务字段，禁止再包一层 output。
             // eventId 同时作为追踪 ID，与消息头 __correlationId 相同。
             String eventId = UUID.randomUUID().toString();
@@ -66,7 +86,12 @@ public class {{NODE_NAME}} implements FlowNode {
 
             Message<JsonValue> triggered = context.createTriggerMessage(payload, eventId);
             try {
-                context.tellSuccess(triggered);
+                // tryTellSuccess：下游过载时不入队并返回 false，不能用 tellSuccess（会被引擎静默丢弃）
+                if (context.tryTellSuccess(triggered)) {
+                    guard.recordEmitted(context, HEALTHY_TEXT);
+                } else {
+                    guard.recordDropped(context);
+                }
             } finally {
                 // 必须且只调一次：记录触发器的执行次数、QPS 与耗时（框架不去重）。
                 // 特殊触发器可按说明挪到真正结束处，但不能删除
@@ -75,6 +100,8 @@ public class {{NODE_NAME}} implements FlowNode {
         } catch (Exception e) {
             log.error("[{{NODE_NAME}}] 触发失败", e);
             context.setStatus(NodeStatus.builder().color("red").text("触发失败").build());
+        } finally {
+            guard.exit();
         }
     }
 
@@ -84,6 +111,9 @@ public class {{NODE_NAME}} implements FlowNode {
         if (scheduledFuture != null) {
             scheduledFuture.cancel(true);
             scheduledFuture = null;
+        }
+        if (guard != null) {
+            guard.reset();
         }
     }
 }

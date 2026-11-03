@@ -10,7 +10,6 @@ import cn.buildify.bundle.api.json.JsonValue;
 import cn.buildify.bundle.api.json.JsonValueFactory;
 import cn.buildify.bundle.api.message.Message;
 import cn.buildify.bundle.api.message.support.MessageBuilder;
-import cn.buildify.bundle.api.status.NodeStatus;
 import cn.buildify.bundle.api.validation.Validator;
 import lombok.extern.slf4j.Slf4j;
 
@@ -46,7 +45,6 @@ public class {{NODE_NAME}} implements FlowNode {
                 .followRedirects(HttpClient.Redirect.NORMAL)
                 .build();
         applyParameters(parameters);
-        context.setStatus(NodeStatus.builder().color("green").text("就绪").build());
     }
 
     /** 只有超时影响连接，其余参数在 onParametersUpdated 中热更新 */

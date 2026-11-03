@@ -10,7 +10,7 @@
 - [ ] `bundle.json` 位于 `src/main/resources` 根目录
 - [ ] 每个节点 `icon` 为 `"default.svg"`，或是 `icons/` 下同名文件的文件名（如 `icons/DingTalk.svg` ↔ `"DingTalk.svg"`）
 - [ ] 图标文件放在 Bundle 根目录 `icons/`，未放进 `src/main/resources`、未打进 JAR；`icons/` 下没有无人引用的图片
-- [ ] 🔍 创建软件包时，图标来自用户、厂商官网或图标站（Simple Icons / Iconify / svgl），不是自己画的；已向用户列出文件、用途和来源。发布新版本时不再查找或上传
+- [ ] 🔍 发布时已用 `bundle icons` 核对 `bundle.json` 的图标名。缺的才创建：本地文件或 Devicons API（名称完全匹配）；找不到则改为 `default.svg`，并告知用户稍后在控制台替换。已有图标不覆盖，不是自己画的
 - [ ] `bundle.json` 的 `bundleName` 为 `命名空间/包名`，两段只含小写字母、数字和 `. _ -`
 - [ ] 模块根目录存在 `docs.md`（平台用户使用文档）与 `CHANGELOG.md`；`README.md` 不作为平台文档
 
@@ -184,12 +184,12 @@
 - [ ] 多把发布密钥时命令带 `--profile`；用户未要求时不改 `[publish].current`
 - [ ] 仓库有 `.buildify-workspace` 时，所用密钥的 `tenantId` 与该文件一致
 - [ ] `key test` 返回的 `tenantName` 已向用户确认是目标工作空间
-- [ ] 软件包已存在（`bundle info`）；新包用确认表列出软件名称、软件描述、搜包关键词、能覆盖 / 不覆盖，经用户确认后才 `bundle create`
+- [ ] 软件包已存在（`bundle info`）；新包先 `bundle namespaces`，优先用已有命名空间，用户选择新建才 `namespace create`。确认表列出命名空间、软件名称、软件描述、搜包关键词、能覆盖 / 不覆盖，经用户确认后才 `bundle create`
 - [ ] 🔍 软件名称是「官方中文名 + 能力」（2–16 字）；软件描述 40–150 字，按「对接对象（含英文名）→ 按节点列出的动作 → 用于场景 → 不含边界（请用「另一包」）」写，无营销词和实现细节
 - [ ] 🔍 搜包用的中文名、英文名、别名、动作、场景都出现在名称或描述里；同一厂商多个包时名称能区分、描述互相用「请用」指向
 - [ ] 节点 `label` 是中文短名（不是类名），`summary` ≤ 10 字且不是「待补充」
 - [ ] 节点增删或对接范围变化时已 `bundle update --display-name / --summary`，使用文档标题和第一段与软件名称、软件描述一致
-- [ ] 仅新建软件包时：封面 `icons/cover.*` 随 `bundle create --icon` 上传（找不到图时用 `https://bundles.buildify.cn/icons/default.svg`），自定义图标已 `bundle icon upload`。发布新版本时不查找、不上传图标
+- [ ] 仅新建软件包时：封面 `icons/cover.*` 随 `bundle create --icon` 上传（找不到图时用 `https://bundles.buildify.cn/icons/default.svg`）。节点图标在每次发布时核对，只上传平台上还没有的
 - [ ] `docs.md` 已按本版本更新，并在 `bundle upload` **之前** `bundle doc set --file docs.md`，`bundle doc get` 确认已同步。没有把 `README.md` 传上去
 
 ## 源码版本管理

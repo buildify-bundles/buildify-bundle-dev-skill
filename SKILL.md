@@ -48,10 +48,10 @@ Bundle 开发进度：
 **发布时**：只同步用户使用文档 `docs.md`，不要同步 `README.md`。用户在软件包页查看，编排 Agent 用 `bundle doc` 阅读后编排节点。
 按本版本更新：适用、凭证类型、每个节点的何时使用 / 参数 / 输出路径 / 出口、错误码；不要写项目结构、
 构建、ClassLoader。校验通过后，在 `bundle upload` **之前** `bundle doc set --file docs.md` 并
-`bundle doc get` 确认，再上传 JAR。发布已有软件包的新版本时**不查找、不上传图标**。章节约定见 [reference/publishing.md](reference/publishing.md#docsmd每个-bundle-必须)。
+`bundle doc get` 确认，再上传 JAR。发布时核对 `bundle.json` 的图标名是否已在 `bundle icons` 里，没有的才创建。章节约定见 [reference/publishing.md](reference/publishing.md#docsmd每个-bundle-必须)。
 
 **软件名称与软件描述**（控制台字段，对应 `--display-name` / `--summary`）：编排 Agent 只靠
-`bundle list -k` 命中后再读这两项决定用哪个包。建包前按已有节点起草，用确认表列出名称、描述、
+`bundle list -k` 命中后再读这两项决定用哪个包。建包前先 `bundle namespaces`，优先用已有命名空间，用户选择新建才 `namespace create`。再按已有节点起草，用确认表列出命名空间、名称、描述、
 搜包关键词、能覆盖 / 不覆盖，等用户确认再 `bundle create`。名称写「官方中文名 + 能力」
 （如「钉钉群机器人」）；描述固定句式：对接对象（含英文名）→ 按节点列出的动作 → 典型场景 →
 与相近包的边界（「不含 xxx，请用「yyy」」）。规范、确认表和正反例见
@@ -105,7 +105,7 @@ python3 <skill-root>/scripts/scaffold_bundle.py \
 `bundle.json` 节点缺 `icon`（默认应为 `"default.svg"`）、自定义 `icon` 在 `icons/` 下没有同名文件、
 `icons/` 下有没人引用的图片、使用文档漏列节点或凭证类型、使用文档写入了开发内容、`bundleName` 不符合平台命名规则，
 触发器用了无界队列 / 无界线程池、在循环里直接 `tell*`、用 `tellSuccess` 而不是 `tryTellSuccess`、没有任何限流，
-以及 resources 下的 SVG 记 WARNING（图标放 `icons/`，创建软件包时再上传，不要打进 JAR，发布新版本时不上传）：
+以及 resources 下的 SVG 记 WARNING（图标放 `icons/`，发布时平台还没有才上传，不要打进 JAR）：
 
 ```bash
 python3 <skill-root>/scripts/validate_bundle.py ./my-bundle           # ERROR 时 exit 1
@@ -119,7 +119,7 @@ my-bundle/
 ├── pom.xml                          # buildify-bundle-api scope=provided；release=21；shade+SPI transformer
 ├── docs.md                      # 平台用户使用文档，发布时 doc set 同步；README.md 不上传
 ├── README.md / CHANGELOG.md        # README 给开发者；CHANGELOG 给 releaseNote
-├── icons/                           # 仅创建软件包时上传：cover.* 为封面，其余文件名 = 节点 icon 值；不打进 JAR
+├── icons/                           # cover.* 仅创建时作封面；节点图标发布时缺了才上传；不打进 JAR
 └── src/main/
     ├── java/.../nodes|methods|credentials/
     └── resources/
@@ -145,15 +145,11 @@ Maven 依赖：`cn.buildify:buildify-bundle-api`（版本见 `templates/project/
 6. 已知错误用 `FlowNodeException`，`initialize` 参数校验优先用 SDK 的 `Validator`。接口调用失败（HTTP 非 2xx 或业务码非 0）时用脚手架生成的 `HttpErrors.httpError` / `apiError`，把 `statusCode` 和脱敏后的 `body` 放进 `msg.error.metadata`；代码中的错误码都要写进使用文档「错误码」一节。触发器遵守
    `isTest()` / `createTriggerMessage(payload, eventId)` / `complete`（位置可按说明调整）/ `destroy()`。`eventId` 同时写入 payload，
    `triggerNodeId` 取 `getWorkflowNodeId()`，`workerId` 取 `getWorkerId()`
-7. **只在创建软件包时**找图标并上传。依次从用户提供、厂商官网、图标站（Simple Icons / Iconify / svgl）找 SVG，
-   不要自己画；都没有时用默认图标 `https://bundles.buildify.cn/icons/default.svg`：
-   封面下载它存为 `icons/cover.svg`，随 `bundle create --icon` 上传；节点写 `"icon": "default.svg"`（平台自带的就是这张图）。图片放 Bundle 根目录 `icons/`：
-   封面叫 `cover.*`，节点图标的文件名与 `icon` 值逐字一致（`icons/DingTalk.svg` ↔ `"icon": "DingTalk.svg"`），
-   并向用户列出文件、用途和来源。发布已有软件包的新版本时不查找、不上传图标。图标不打进 JAR、不放 `src/main/resources`，见
+7. 发布时核对 `bundle.json` 的 `icon` 是否已在 `bundle icons` 中。已有的不覆盖；没有的才创建：本地 `icons/` 有同名文件就上传，否则用 [Devicons API](https://devicons.io/docs/api/) 查找（只接受名称完全匹配的结果）。找不到就把该节点改成 `default.svg`（`https://bundles.buildify.cn/icons/default.svg`），并告诉用户稍后在控制台替换。不要自己画。封面只在 `bundle create --icon` 时上传。文件名与 `icon` 值逐字一致（`icons/DingTalk.svg` ↔ `"icon": "DingTalk.svg"`），不打进 JAR、不放 `src/main/resources`，见
    [reference/publishing.md](reference/publishing.md#命名与图标)
 8. 需要人逐项填写的数组用 `FixedCollection`（可增删），不要用 `JsonEditor` 手写 JSON 数组
 9. 参数变更要么 `isRestartRequired` 返回 `true` 并重启，要么 `onParametersUpdated` 用新参数重新赋值。路由、cron、连接必须重启
-10. 对接三方 HTTP API 时提供以 `ApiCall` 结尾的通用调用节点。未实现的接口按厂商文档填写，不要为每个接口新做节点
+10. 对接三方 HTTP API 时提供以 `ApiCall` 结尾的通用调用节点。未实现的接口按厂商文档填写，不要为每个接口新做节点。这类接口节点不要 `setStatus`（不要显示「就绪」）；状态只留给触发器和长连接
 11. 触发器必须做背压：发消息用 `tryTellSuccess`（`tellSuccess` 在下游过载时会被引擎丢弃，触发器感知不到），
     用脚手架生成的 `support/TriggerGuard` 读取表单 `maxPerSecond`（默认 `0` 不限速）、防止轮询重叠；只用有界缓冲。
     超限时推送型丢弃计数（节点状态黄色）、拉取型跳过本轮或暂停消费、Webhook 返回 429 + `Retry-After`、MQ nack。

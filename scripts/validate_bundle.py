@@ -611,7 +611,7 @@ def check_icon_files(project: Path, declared: dict) -> None:
                                 f"{COVER_STEM}.* 留给封面，节点图标换个名字")
         elif not (icons_dir / icon).is_file():
             warn("bundle.json", f"节点 '{name}' icon '{icon}' 在 icons/ 下没有同名文件；"
-                                f"把图片存为 icons/{icon}，创建软件包时按文件名上传，"
+                                f"把图片存为 icons/{icon}，发布时若平台还没有该图标再按文件名上传，"
                                 "找不到合适图片就改回 \"default.svg\"")
     if not icons_dir.is_dir():
         return

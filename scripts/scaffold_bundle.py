@@ -524,11 +524,12 @@ def main() -> None:
 
     print("\n完成。后续步骤：")
     print("  1. 编辑 src/main/resources/bundle.json：节点 label 写成中文短名，summary ≤10 字写清做什么")
-    print("     发布建包时软件名称（--display-name）= 官方中文名+能力；软件描述（--summary）按"
+    print("     发布建包时先 bundle namespaces，优先用已有命名空间，用户选择新建才 namespace create；"
+          "软件名称（--display-name）= 官方中文名+能力；软件描述（--summary）按"
           "「对接谁：能做什么。用于场景。不含边界」写，见 reference/publishing.md")
-    print("     创建软件包时才从官网或图标站找 SVG：封面存 icons/cover.svg，节点图标存 icons/<icon 值>"
-          "（如 icons/DingTalk.svg ↔ \"icon\": \"DingTalk.svg\"）；找不到时封面用 https://bundles.buildify.cn/icons/default.svg，节点保持 default.svg。"
-          "发布已有软件包的新版本时不查找、不上传图标")
+    print("     发布时核对 bundle.json 的 icon 是否已在平台图标里：没有才创建。查找用 Devicons API"
+          "（https://devicons.io/docs/api/，只接受名称完全匹配）；找不到则该节点改为 default.svg，"
+          "告诉用户稍后在控制台替换。封面只在 bundle create --icon 时上传")
     print("  2. 编辑 src/main/resources/properties/*.json 定义表单字段")
     print("  3. 实现节点 onMsg 业务逻辑")
     if args.trigger or args.webhook:

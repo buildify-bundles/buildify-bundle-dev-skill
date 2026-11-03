@@ -165,7 +165,7 @@ buildify-publish help
 | `health` | `GET /v1/health` | 连通性检查，无需密钥 |
 | `key test` | `GET /v1/publish-key/test` | 返回 `tenantId`、`tenantName`（工作空间名）、`keyPrefix`、`scopes`，并缓存到 profile |
 | `bundle namespaces` | `GET /v1/bundles/namespaces` | 列出本工作空间的命名空间 |
-| `bundle namespace create --name <slug> [--remark]` | `POST /v1/bundles/namespaces` | 创建命名空间；slug 全平台唯一，每个工作空间最多 5 个 |
+| `bundle namespace create --name <slug> [--remark]` | `POST /v1/bundles/namespaces` | 创建命名空间；slug 全平台唯一，每个工作空间最多 5 个。建包时优先用已有命名空间，用户选择新建才执行 |
 | `bundle namespace delete --name <slug>` | `DELETE /v1/bundles/namespaces/{slug}` | 下面还有软件包时失败 |
 | `bundle create --namespace <slug> --name <short> --display-name <软件名称> [--summary] [--visibility] [--icon]` | `POST /v1/bundles` | 创建软件包，完整名为 `slug/short`；`--summary` 为软件描述 |
 | `bundle update --name <ns/name> [--display-name] [--summary] [--visibility] [--icon]` | `POST /v1/bundles/metadata` | 只改传入的字段；`--summary ''` 清空软件描述 |
@@ -308,51 +308,48 @@ buildify-publish --json config profiles
 
 ### 找图
 
-**只在创建软件包时做。** 发布已有软件包的新版本时不要找图、不要下载、不要上传。
-软件包封面和节点图标都按下面的顺序找，**不要自己画 SVG**：
+**每次发布都核对节点图标，只补平台上还没有的。** 先 `bundle icons`，把 `bundle.json` 里每个节点的 `icon` 和列表对比：
 
-1. 用户给了图片就用用户的。
-2. 对接的厂商 / 产品的官网：品牌资源页（brand、press、media kit、logo 下载）提供的官方 SVG Logo。
-3. 图标站，优先 SVG：
-   - [Simple Icons](https://simpleicons.org)：品牌 Logo，`https://cdn.simpleicons.org/<slug>` 直接返回带品牌色的 SVG
-   - [Iconify](https://icon-sets.iconify.design)：`logos` 集收彩色品牌 Logo，`https://api.iconify.design/logos/<name>.svg`；
-     没有品牌的功能型 Bundle（HTTP、定时、文件等）用 `tabler`、`lucide`、`mdi` 等集里语义贴切的图标，
-     加 `?color=%23<十六进制色>` 指定颜色
-   - [svgl](https://svgl.app)：常见 SaaS / 开发工具的彩色 Logo
+- `default.svg`：平台自带，视为已存在，不上传。
+- 列表里已有同名存储名：不要重新下载、不要覆盖。用户可能已在控制台换过图。
+- 列表里没有：才创建。本地 `icons/` 已有同名文件就直接上传；没有就按下面的顺序找，找到后存成与 `icon` 值逐字相同的文件再上传。
 
-   图标站对不少国内厂商没有收录（例如 Simple Icons 没有钉钉、飞书，返回 404），返回 404 就换下一个来源，
-   不要拿名字相近的别家图标凑数。
-4. 都没有合适的，用默认图标 `https://bundles.buildify.cn/icons/default.svg`，并告诉用户可以之后补图：
-   - 封面：`curl -fsSL https://bundles.buildify.cn/icons/default.svg -o icons/cover.svg`，照常用 `--icon` 上传
-   - 节点：保持 `"icon": "default.svg"`（平台自带的就是这张图），不用在 `icons/` 下放文件
+查找顺序，**不要自己画 SVG**：
 
-下载后检查：文件确实是图片（SVG 以 `<svg` 或 `<?xml` 开头，不是 HTML 错误页），不含 `<script>`、
-外链资源，≤ 1MB，画的是对应厂商的标识。找到的图标放进 `icons/` 后，向用户列出每个文件的
-用途和来源地址，例如：
+1. 用户给了图片，或 `icons/<icon 值>` 已经存在，就用这份文件。
+2. [Devicons API](https://devicons.io/docs/api/)（不用密钥）。把图标名去掉扩展名得到查询词（`DingTalk.svg` → `dingtalk`）：
+   - 先 `GET https://devicons.io/api/v1/icons/<查询词>.json`。200 且不是 `deprecated` 时，下载响应里的 `svg`。
+   - 404 再 `GET https://devicons.io/api/v1/search?q=<查询词>&limit=5`。只接受 `slug`、`name` 或 `aliases` 与查询词完全相同（忽略大小写）的结果，用该条的 `svg`。模糊结果、别的品牌不要用。
+3. 没有命中：把该节点的 `icon` 改成 `default.svg`，不要上传默认图。告诉用户这张是占位，可以稍后在控制台替换。
 
-| 文件 | 用途 | 来源 |
-|---|---|---|
-| `icons/cover.svg` | 软件包封面 | `https://cdn.simpleicons.org/wechat` |
-| `icons/WeChat.svg` | `SendMessage`、`ApiCall` 节点 | 同上 |
+```bash
+curl -fsSL "https://devicons.io/api/v1/icons/postgresql.json"
+curl -fsSL "https://devicons.io/api/v1/search?q=postgresql&limit=5"
+curl -fsSL "https://devicons.io/devicons/icons/postgresql.svg" -o icons/Postgresql.svg
+```
 
-厂商 Bundle 的节点通常共用品牌图标；只有用户要求或节点差异明显时才为单个节点另找图标。
+下载后检查：文件确实是图片（SVG 以 `<svg` 或 `<?xml` 开头，不是 HTML 错误页），不含 `<script>`、外链资源，≤ 1MB。向用户列出每个新建图标的文件、用途和来源；用了默认图的节点单独列出，并写明可在控制台替换。
+
+封面只在**创建软件包**时找一次，顺序相同：用户提供的文件、Devicons、否则 `curl -fsSL https://bundles.buildify.cn/icons/default.svg -o icons/cover.svg`。之后发布不要 `bundle update --icon`。
+
+厂商 Bundle 的节点通常共用一张品牌图标；只有用户要求或节点差异明显时才为单个节点另找。
 
 ### 上传图标
 
-**只在 `bundle create` 成功之后做这一次。** 发布新版本时不要执行下面的命令，也不要 `bundle update --icon`。
+软件包必须已经存在。**只上传这次核对中平台还没有的图标**，已有的跳过。
 
 ```bash
-# 节点图标：--icon-name 取文件名去掉扩展名，平台存储名 = 图标名 + 原扩展名，同名覆盖
-for f in icons/*; do
-  n=$(basename "$f"); [ "${n%.*}" = cover ] && continue
-  buildify-publish bundle icon upload --name acme/dingtalk --icon-name "${n%.*}" --file "$f"
-done
-buildify-publish --json bundle icons --name acme/dingtalk     # 核对 bundle.json 里每个非 default.svg 的 icon 都在列表里
+buildify-publish --json bundle icons --name official/dingtalk-robot   # 与 bundle.json 的 icon 对比，缺的才继续
 
-buildify-publish bundle icon delete --name acme/dingtalk --icon-name DingTalk.svg   # 删除要带扩展名
+# --icon-name 取文件名去掉扩展名，平台存储名 = 图标名 + 原扩展名
+buildify-publish bundle icon upload --name official/dingtalk-robot \
+  --icon-name Postgresql --file icons/Postgresql.svg
+
+buildify-publish --json bundle icons --name official/dingtalk-robot   # 再对一次，非 default.svg 的 icon 都应在列表里
+buildify-publish bundle icon delete --name official/dingtalk-robot --icon-name Postgresql.svg   # 删除要带扩展名
 ```
 
-封面在 `bundle create --icon` 时一起上传，不要再 `bundle update --icon`。节点图标依赖软件包已存在，所以先 `bundle create` 再执行上面的循环。之后发布新版本都不再碰图标。
+`default.svg` 不上传。封面只在 `bundle create --icon` 时上传。
 
 ## 发布流程
 
@@ -361,19 +358,20 @@ buildify-publish bundle icon delete --name acme/dingtalk --icon-name DingTalk.sv
 | 步骤 | 动作 |
 |---|---|
 | 1 | `buildify-publish --json key test`，向用户确认 `tenantName` 就是目标工作空间 |
-| 2 | `bundle info --name <bundleName>`。存在就跳到第 4 步，**不要**找图标、**不要**上传图标 |
-| 3 | 不存在时建包：按[找图](#找图)准备 `icons/`，再按下文「新建软件包」创建并上传封面和节点图标。这是唯一查找、上传图标的步骤 |
-| 4 | 读当前版本：`mvn -q -Dexpression=project.version -DforceStdout help:evaluate`，按 SemVer 修改 `pom.xml` 的 `<version>` |
-| 5 | 重写 `CHANGELOG.md`，仅本 bundle、本版本一节 |
-| 6 | 更新 `docs.md`（用户使用文档，给用户和编排 Agent）：对照本版本逐项改适用、凭证类型、每个节点的何时使用 / 参数 / 输出路径 / 出口、错误码。CHANGELOG 里提到的变化都要体现。不要改 README 来代替这份文档。节点增删或对接范围变了时，按[软件名称与软件描述](#软件名称与软件描述)重写，经用户确认后 `bundle update --display-name / --summary`，并同步使用文档标题和第一段 |
-| 7 | `validate_bundle.py --strict` 0 ERROR / 0 WARNING（含使用文档的节点与错误码、图标文件检查），再构建：`mvn -q clean package`（monorepo 用 `mvn -pl <artifact> -am clean package -DskipTests`，**必须含 `clean`**） |
-| 8 | **先同步用户使用文档**：`bundle doc set --file docs.md`，再用 `bundle doc get` 确认平台上是本次内容。不要传 `README.md` |
-| 9 | `bundle upload`，必须带 `--release-notes-file` |
-| 10 | `bundle info` 核对版本、releaseNote 与 latest 标记 |
+| 2 | `bundle info --name <bundleName>`。存在就跳到第 4 步；不存在走第 3 步 |
+| 3 | 不存在时建包：先 `bundle namespaces`，优先用已有命名空间；用户选择新建才 `namespace create`。封面按[找图](#找图)准备后 `bundle create --icon`。节点图标留到第 4 步 |
+| 4 | **核对图标**（新建和再次发布都做）：`bundle icons` 与 `bundle.json` 的 `icon` 对比。已有的不动；没有的按[找图](#找图)创建并上传。Devicons 找不到的节点改为 `default.svg`，告诉用户稍后在控制台替换 |
+| 5 | 读当前版本：`mvn -q -Dexpression=project.version -DforceStdout help:evaluate`，按 SemVer 修改 `pom.xml` 的 `<version>` |
+| 6 | 重写 `CHANGELOG.md`，仅本 bundle、本版本一节 |
+| 7 | 更新 `docs.md`（用户使用文档，给用户和编排 Agent）：对照本版本逐项改适用、凭证类型、每个节点的何时使用 / 参数 / 输出路径 / 出口、错误码。CHANGELOG 里提到的变化都要体现。不要改 README 来代替这份文档。节点增删或对接范围变了时，按[软件名称与软件描述](#软件名称与软件描述)重写，经用户确认后 `bundle update --display-name / --summary`，并同步使用文档标题和第一段 |
+| 8 | `validate_bundle.py --strict` 0 ERROR / 0 WARNING（含使用文档的节点与错误码、图标文件检查），再构建：`mvn -q clean package`（monorepo 用 `mvn -pl <artifact> -am clean package -DskipTests`，**必须含 `clean`**） |
+| 9 | **先同步用户使用文档**：`bundle doc set --file docs.md`，再用 `bundle doc get` 确认平台上是本次内容。不要传 `README.md` |
+| 10 | `bundle upload`，必须带 `--release-notes-file` |
+| 11 | `bundle info` 核对版本、releaseNote 与 latest 标记 |
 
 必须先 `clean` 再 `package`，避免旧 JAR / 过时 class 混入发布产物。
 
-文档在上传 JAR 之前同步，用户和编排 Agent 拿到新版本时看到的已经是对应内容。第 9 步失败时修复后重传即可；
+文档在上传 JAR 之前同步，用户和编排 Agent 拿到新版本时看到的已经是对应内容。第 10 步失败时修复后重传即可；
 决定放弃这次发布时，用上一版使用文档（`git show <上次发布的提交>:docs.md > /tmp/docs.prev.md`）
 再执行一次 `doc set` 回退，不要让平台文档描述一个不存在的版本。
 
@@ -381,14 +379,24 @@ buildify-publish bundle icon delete --name acme/dingtalk --icon-name DingTalk.sv
 
 `bundle info` 返回 404 时说明平台上还没有这个包。按下文[软件名称与软件描述](#软件名称与软件描述)
 根据**已经实现或即将实现的节点**起草，用确认表给用户看**一次**，等确认再执行命令。
-不要自己编名字，也不要照抄使用文档标题或「xxx 工具」。确认表通过后，按[找图](#找图)准备封面和节点图标，再创建并上传。发布后续版本时跳过找图和上传。
+不要自己编名字，也不要照抄使用文档标题或「xxx 工具」。确认表通过后，封面按[找图](#找图)准备并随 `bundle create --icon` 上传。节点图标在发布流程第 4 步核对：平台已有的不动，没有的再创建。
+
+**命名空间优先用已有的。** 起草确认表之前先执行 `buildify-publish --json bundle namespaces`，把本工作空间已有的命名空间列给用户，并标出推荐项：
+
+1. `bundle.json` 的 `bundleName` 第一段已在列表里：推荐就用它，不必新建。
+2. 第一段不在列表里、但列表非空：推荐改用其中一个已有命名空间，并同步修改 `bundle.json` 的第一段。不要为了迁就本地名字去新建。
+3. 列表为空，或用户明确选「新建」：才执行 `bundle namespace create`。每个工作空间最多 5 个命名空间，未选新建就不要创建。
+
+确认表里的「命名空间」必须是用户选定的那一项（已有 slug，或用户要新建的 slug）。选定之后 `bundle create --namespace` 和 `bundle.json` 的第一段都用它。
 
 ```markdown
 将创建软件包：
 
 | 字段 | 内容 |
 |------|------|
-| 完整名 | acme/dingtalk-robot |
+| 已有命名空间 | official、acme（推荐 official） |
+| 命名空间 | official（已有） |
+| 完整名 | official/dingtalk-robot |
 | 软件名称 | 钉钉群机器人 |
 | 软件描述 | 对接钉钉（DingTalk）自定义群机器人 Webhook：向群聊发送文本、Markdown、链接和 ActionCard 卡片消息，支持 @ 指定成员或所有人，加签校验。用于告警通知、审批结果、日报推送。不含企业内部应用的通讯录、审批（请用「钉钉应用」）。 |
 | 搜包关键词 | 钉钉、DingTalk、群机器人、Webhook、告警、Markdown、ActionCard |
@@ -398,20 +406,25 @@ buildify-publish bundle icon delete --name acme/dingtalk --icon-name DingTalk.sv
 | 封面 | icons/cover.svg（来源：…） |
 ```
 
-确认后：
+用户选定已有命名空间后直接建包，不要再 `namespace create`：
 
 ```bash
-buildify-publish --json bundle namespaces                       # 命名空间已存在就跳过下一行
-buildify-publish --json bundle namespace create --name acme
-buildify-publish --json bundle create --namespace acme --name dingtalk-robot \
+buildify-publish --json bundle namespaces                       # 先列出，确认表里推荐已有项
+buildify-publish --json bundle create --namespace official --name dingtalk-robot \
   --display-name '钉钉群机器人' \
   --summary '对接钉钉（DingTalk）自定义群机器人 Webhook：向群聊发送文本、Markdown、链接和 ActionCard 卡片消息，支持 @ 指定成员或所有人，加签校验。用于告警通知、审批结果、日报推送。不含企业内部应用的通讯录、审批（请用「钉钉应用」）。' \
   --icon icons/cover.svg                                        # 找不到图时 cover.svg 为下载的默认图标
-# 接着按「上传图标」把节点图标传上去。封面已随 --icon 上传，不要再 update --icon
+# 封面已随 --icon 上传，不要再 update --icon。节点图标在发布第 4 步核对，只补平台上没有的
 ```
 
-`namespace create` 返回 409 表示该命名空间已被其他工作空间占用，请用户换一个，并同步修改
-`bundle.json` 的 `bundleName`；每个工作空间最多 5 个命名空间。`bundle create` 返回 409 表示同名包已存在。
+只有用户在确认表里选了「新建」才执行下面这一行，并把 `bundle.json` 的 `bundleName` 第一段改成新 slug：
+
+```bash
+buildify-publish --json bundle namespace create --name acme     # 用户明确要新建时才执行
+```
+
+`namespace create` 返回 409 表示该 slug 已被其他工作空间占用，请用户换一个或改选已有命名空间，并同步修改
+`bundle.json` 的 `bundleName`。每个工作空间最多 5 个命名空间。`bundle create` 返回 409 表示同名包已存在。
 
 ### 软件名称与软件描述
 
@@ -524,7 +537,7 @@ buildify-publish --json bundle doc get --name official/wecom-bot   # 确认已�
 ```
 
 `bundle update` 只改传入的字段。`bundle doc set` 整份覆盖，内容上限约 4Mi 字符，文件必须是 `docs.md`。
-只改了使用文档、没有代码变化时，单独 `doc set` 即可，不必发新版本。发布时不上传图标。
+只改了使用文档、没有代码变化时，单独 `doc set` 即可，不必发新版本。发新版本时仍要做第 4 步的图标核对，但只补平台上还没有的图标。
 
 ## 源码版本管理
 

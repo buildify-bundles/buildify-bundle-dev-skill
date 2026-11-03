@@ -11,6 +11,7 @@
 - [规范 5：凭证标识 PascalCase](#规范-5凭证标识-pascalcase三处逐字一致)
 - [规范 6：已知错误用 FlowNodeException](#规范-6已知错误用-flownodeexception)
 - [规范 7：参数变更必须重启或热更新](#规范-7参数变更必须重启或热更新)
+- [节点状态](#节点状态)
 - [触发器节点四条额外规范](#触发器节点四条额外规范)
 - [命名一致性](#命名一致性最常见的低级错误)
 
@@ -332,6 +333,12 @@ public void onParametersUpdated(Context context, JsonValue newParameters, JsonVa
 ```
 
 不要 `return false` 却留空 `onParametersUpdated()`，也不要把 `oldParameters` 传进 `applyParameters()`。
+
+## 节点状态
+
+请求-响应的接口节点（普通 HTTP 节点、通用调用）不要 `setStatus`。`initialize()` 里写「就绪」「运行中」没有变化可观察，画布上会一直挂着一句空状态。
+
+`setStatus` 只留给有持续运行状态的节点：触发器（已调度、监听中、限流丢弃）、长连接（已连接、已断开）。状态文案要随真实变化更新，不要在启动时设一次就再也不改。
 
 ## 触发器节点四条额外规范
 

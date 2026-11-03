@@ -152,6 +152,8 @@ Map<String, Object> env = context.getEnvironmentVariables();
 
 ### 节点状态显示
 
+请求-响应的接口节点不要调用。只在触发器、长连接这类有持续状态时使用，文案随状态变化（已连接、监听中、限流丢弃），不要写「就绪」。
+
 ```java
 context.setStatus(NodeStatus.builder().color("green").text("已连接").build());
 // color: green / red / yellow

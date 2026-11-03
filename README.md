@@ -24,7 +24,7 @@
 | 写表单 | [reference/forms-schema.md](reference/forms-schema.md) |
 | 写触发器 | 限流、有界缓冲、`tryTellSuccess`、Webhook 429，见 [reference/backpressure.md](reference/backpressure.md) |
 | 校验 | `scripts/validate_bundle.py --strict`，0 ERROR 后再 `mvn -q clean package` |
-| 发布 | `buildify-publish` CLI 建命名空间和软件包（软件名称 / 软件描述按规范写）。创建时查找并上传图标；发布新版本时只把 `docs.md` 同步到平台（给用户和编排 Agent 用节点），不同步 README、不上传图标，见 [reference/publishing.md](reference/publishing.md) |
+| 发布 | `buildify-publish` CLI 建软件包（优先用已有命名空间，用户选择新建才创建；软件名称 / 软件描述按规范写）。发布时核对 `bundle.json` 图标，平台没有的才用 Devicons 创建，找不到用默认图；同时把 `docs.md` 同步到平台，不同步 README，见 [reference/publishing.md](reference/publishing.md) |
 | 版本管理 | 开发完成后检查 git 仓库，没有远程地址时请用户提供 |
 
 环境：Python 3.8+、JDK 21+、Maven 3.8+。

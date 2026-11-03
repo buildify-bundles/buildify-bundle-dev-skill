@@ -46,7 +46,9 @@ public class {{NODE_NAME}} implements FlowNode {
 
         this.route = Route.create(Set.of(HttpMethod.POST), path)
                 .timeout(parameters.path("timeout").asInt(5000))
-                // 入站认证用 route.authenticator(...)，在读 body 之前执行。HMAC 这类要完整 body 的校验仍放 handler。
+                // 入站认证用 route.authenticator(...)，在读 body 之前执行。
+                // 本模板会把 JSON 解析成对象并立刻回通用成功。微信支付 / 支付宝 / Stripe
+                // 这类按原文验签的回调不要用本模板，见 coding-rules.md「按原文验签的回调触发器」。
                 .handler(rc -> handleRequest(context, rc));
 
         context.getRouter().register(route);

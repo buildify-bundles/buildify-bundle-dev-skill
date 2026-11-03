@@ -130,7 +130,7 @@ client.onEvent(event -> {
 
 ## Webhook
 
-在**读 body 之前**判断，超限直接返回 429，让调用方退避重试：
+能用核心包 `WebhookTriggerNode` 已有认证的接口不要做成这里的路由。只有按原文验签、对不上那些方式时才走 [coding-rules.md](../coding-rules.md)「按原文验签的回调触发器」。限流规则相同：在**读 body 之前**判断，超限直接返回 429，让调用方退避重试：
 
 ```java
 if (!guard.admit(context)) {

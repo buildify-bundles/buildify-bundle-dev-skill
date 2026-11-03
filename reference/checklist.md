@@ -73,6 +73,7 @@
 - [ ] 🔍 本地缓冲只用有界队列（`ArrayBlockingQueue` 等），没有 `new LinkedBlockingQueue<>()`、
       `ConcurrentLinkedQueue`、`Executors.newFixedThreadPool/newCachedThreadPool`；`destroy()` 中清空缓冲并 `guard.reset()`
 - [ ] 使用文档写明了限流行为（丢弃计数 / 429 + `Retry-After`）
+- [ ] 按原文验签、且 `WebhookTriggerNode` 的 `authType` 覆盖不了时，才做成独立触发器：`request().body()` 保留原文后再验签，失败按文档直接返回；支持按文档直接写回，以及 eventId = `getRequestId()` 后由 `WebhookResponseNode` 写回。没有用通用 Webhook 模板代替
 
 ## 凭证
 

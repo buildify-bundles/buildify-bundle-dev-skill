@@ -7,7 +7,7 @@ description: >-
   debugs, reviews or publishes a Buildify bundle; mentions FlowNode, bundle.json,
   @FlowNodeDescription, buildify-bundle-api, credentialsType, MethodExecutor,
   trigger, webhook or credential; or talks about 节点开发, 工作流节点, 动态表单, 凭证,
-  触发器, Webhook or 发布 Bundle.
+  触发器, Webhook, 验签, 回调, 微信支付, 支付宝, Stripe or 发布 Bundle.
 ---
 
 # Buildify Bundle 开发
@@ -71,6 +71,7 @@ Bundle 开发进度：
 | **节点间 RPC** | [reference/node-service-rpc.md](reference/node-service-rpc.md) |
 | **热更新 / ClassLoader 泄漏** | [reference/lifecycle.md](reference/lifecycle.md) |
 | **写触发器 / 防背压** | [reference/backpressure.md](reference/backpressure.md)（限流、有界缓冲、429、MQ nack） |
+| **按原文验签的回调** | 先确认对不上 `WebhookTriggerNode` 的 `authType`，再读 [coding-rules.md](coding-rules.md)「按原文验签的回调触发器」。不要套通用 Webhook 模板 |
 | **写用户使用文档** | [reference/publishing.md](reference/publishing.md#docsmd每个-bundle-必须)（`docs.md`；用户查看 + 编排 Agent 用节点） |
 | **发布** | [reference/publishing.md](reference/publishing.md) |
 
@@ -154,6 +155,7 @@ Maven 依赖：`cn.buildify:buildify-bundle-api`（版本见 `templates/project/
     用脚手架生成的 `support/TriggerGuard` 读取表单 `maxPerSecond`（默认 `0` 不限速）、防止轮询重叠；只用有界缓冲。
     超限时推送型丢弃计数（节点状态黄色）、拉取型跳过本轮或暂停消费、Webhook 返回 429 + `Retry-After`、MQ nack。
     需要 bundle-api 3.1.0 和对应 Worker，见 [reference/backpressure.md](reference/backpressure.md)
+12. 接口认证先用核心包 `WebhookTriggerNode` 已有的 `authType`（`none` / `httpBasic` / `apiKey` / `jwtAuth`）。只有按原文验签、对不上这些方式时（微信支付、支付宝、Stripe 等），才做成该渠道自己的触发器：`Route.create`，`request().body()` 保留原文后再验签。验签失败按官方文档直接返回。返回要同时支持按文档直接写回，以及处理完后把 eventId 设为 `getRequestId()`、由核心包 `WebhookResponseNode` 写回。不要做成下游验签节点，也不要套通用 Webhook 模板。见 [coding-rules.md](coding-rules.md)「按原文验签的回调触发器」
 
 ## 代码模板
 

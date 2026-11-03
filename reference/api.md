@@ -525,12 +525,14 @@ context.getRouter().register(route);        // initialize()
 context.getRouter().unregister(route);      // destroy()，必须
 
 // handler 内
-String body     = rc.request().body();
+String body     = rc.request().body();      // 原文。验签必须用这份字符串，不能先解析成对象
 String clientIp = rc.getClientIP();
 String token    = rc.request().getHeader("Authorization");
 rc.response().statusCode(200).contentType("application/json").write("{\"ok\":true}").end();
 rc.fail(500, message);
 ```
+
+接口认证先用核心包 `WebhookTriggerNode` 的 `authType`。按原文验签、对不上已有方式时，不要用它：`application/json` 会把 body 解析成对象，原始字节回不来。这时做成自己的触发器，用上面的 `request().body()` 验签。直接返回时按该渠道文档写状态码和正文。处理完再返回时不要 `end()`，`createTriggerMessage` 的 eventId 用 `rc.getRequestId()`，下游用核心包 `WebhookResponseNode` 写回。细则见 [coding-rules.md](../coding-rules.md)「按原文验签的回调触发器」。
 
 ### CORS
 

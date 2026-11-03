@@ -355,6 +355,21 @@ public void onParametersUpdated(Context context, JsonValue newParameters, JsonVa
    本地缓冲只用有界队列。超限时推送型丢弃计数、拉取型跳过本轮、Webhook 返回 429 + `Retry-After`、MQ nack。
    `destroy()` 中清空缓冲并 `guard.reset()`。详见 [reference/backpressure.md](reference/backpressure.md)。
 
+## 按原文验签的回调触发器
+
+接口认证先用核心包 `WebhookTriggerNode` 已有的 `authType`（`none` / `httpBasic` / `apiKey` / `jwtAuth`）。只有按原始报文体计算签名、对不上这些方式时，才做下面这个触发器。微信支付、支付宝、Stripe 属于这类。不要在 `WebhookTriggerNode` 后面再加验签节点。`Content-Type: application/json` 时，那个触发器把 `request().body()` 解析成对象，原始字节回不来；表单提交会收成字段。签名对不上。
+
+做成这个渠道自己的触发器（`isTrigger=true, hasInput=false`），验签放在触发器里：
+
+1. `Route.create` 注册官方文档里的方法和路径。handler 用 `rc.request().body()` 拿原始字符串，验签只用这份原文和文档要求的头（时间戳、随机串、序列号、签名）。通过之后才解析业务字段。payload 根级同时放 `rawBody`（原文）和解析后的字段，并带上 `triggerNodeId`、`eventId`、`workerId`。
+2. 验签、时间窗、重放都在触发器里做完。失败按官方文档的状态码和正文 `response().write().end()`，不要 `tryTellSuccess`。
+3. 返回两种都要支持，用参数选择（如 `responseMode`）。eventId 一律用 `rc.getRequestId()`，与消息头 `__correlationId` 相同。
+   - **直接返回**：验签通过后立刻按官方文档的状态码、Content-Type 和正文写回，不要写成 `{"code":200,"msg":"success"}`。流程在后台继续。
+   - **处理完再返回**：不要 `end()`。下游用核心包 `WebhookResponseNode`，靠 `__correlationId` 找到这次 HTTP 并写回。`Route.timeout` 要盖住下游处理时间，默认 5000 毫秒不够就加大。
+4. 测试运行（`isTest()`）仍注册路由。成功请求立刻返回测试确认，不挂起连接，也不回文档要求的正式正文。正式环境才按 `responseMode`。
+5. 限流仍在读 body 之前：超限或 `tryTellSuccess` 为 false 时返回 429 和 `Retry-After`，不进入流程。
+6. 脚手架 `templates/java/WebhookNode.java.tmpl` 会把 JSON 解析成对象并立刻回通用成功，不能用来做验签回调。
+
 ## 命名一致性（最常见的低级错误）
 
 | 位置 A | 必须完全等于 | 位置 B |

@@ -524,7 +524,7 @@ def main() -> None:
 
     print("\n完成。后续步骤：")
     print("  1. 编辑 src/main/resources/bundle.json：节点 label 写成中文短名，summary ≤10 字写清做什么")
-    print("     发布建包时先 bundle namespaces，优先用已有命名空间，用户选择新建才 namespace create；"
+    print("     发布建包时先 bundle namespaces，确认表给出默认可改的命名空间和包名，确认后再建包；"
           "软件名称（--display-name）= 官方中文名+能力；软件描述（--summary）按"
           "「对接谁：能做什么。用于场景。不含边界」写，见 reference/publishing.md")
     print("     发布时核对 bundle.json 的 icon 是否已在平台图标里：没有才创建。"

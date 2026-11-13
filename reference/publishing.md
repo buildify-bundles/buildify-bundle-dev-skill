@@ -366,7 +366,7 @@ buildify-publish bundle icon delete --name official/dingtalk-robot --icon-name P
 |---|---|
 | 1 | `buildify-publish --json key test`，向用户确认 `tenantName` 就是目标工作空间 |
 | 2 | `bundle info --name <bundleName>`。存在就跳到第 4 步；不存在走第 3 步 |
-| 3 | 不存在时建包：先 `bundle namespaces`，优先用已有命名空间；用户选择新建才 `namespace create`。封面按[找图](#找图)准备。找到封面文件才 `bundle create --icon`；找不到就省略 `--icon`，不下载默认图。节点图标留到第 4 步 |
+| 3 | 不存在时建包：先 `bundle namespaces`，确认表给出默认命名空间（优先已有）和默认包名，写明可以改。用户确认或改完后才建包；要新建命名空间时才 `namespace create`。封面按[找图](#找图)准备。找到封面文件才 `bundle create --icon`；找不到就省略 `--icon`，不下载默认图。节点图标留到第 4 步 |
 | 4 | **核对图标**（新建和再次发布都做）：`bundle icons` 与 `bundle.json` 的 `icon` 对比。平台已有的不动。没有的按[找图](#找图)：先拿到图，再上传，上传成功后才设置 `icon`。找不到就跳过，保持原值，结束时列出这些节点，方便在控制台补图 |
 | 5 | 读当前版本：`mvn -q -Dexpression=project.version -DforceStdout help:evaluate`，按 SemVer 修改 `pom.xml` 的 `<version>` |
 | 6 | 重写 `CHANGELOG.md`，仅本 bundle、本版本一节 |
@@ -385,24 +385,29 @@ buildify-publish bundle icon delete --name official/dingtalk-robot --icon-name P
 ### 新建软件包
 
 `bundle info` 返回 404 时说明平台上还没有这个包。按下文[软件名称与软件描述](#软件名称与软件描述)
-根据**已经实现或即将实现的节点**起草，用确认表给用户看**一次**，等确认再执行命令。
-不要自己编名字，也不要照抄使用文档标题或「xxx 工具」。确认表通过后，封面按[找图](#找图)准备：找到文件才随 `bundle create --icon` 上传，找不到就省略 `--icon`。节点图标在发布流程第 4 步核对：平台已有的不动，没有的先拿到图再上传，成功后才设置 `icon`。
+根据**已经实现或即将实现的节点**起草。确认表里给出**默认命名空间**和**默认包名**，写明可以直接确认，也可以修改。
+用户回复「确认」就用默认值；改了命名空间或包名，就用改后的值，不要再问一遍。然后才执行命令。
+默认值按命名规则起草，不要编成看不出用途的词，也不要照抄使用文档标题或「xxx 工具」。
+确认之后，封面按[找图](#找图)准备：找到文件才随 `bundle create --icon` 上传，找不到就省略 `--icon`。节点图标在发布流程第 4 步核对：平台已有的不动，没有的先拿到图再上传，成功后才设置 `icon`。
 
-**命名空间优先用已有的。** 起草确认表之前先执行 `buildify-publish --json bundle namespaces`，把本工作空间已有的命名空间列给用户，并标出推荐项：
+**默认命名空间优先用已有的。** 起草确认表之前先执行 `buildify-publish --json bundle namespaces`，把本工作空间已有的命名空间列在表里，并给出一个默认项：
 
-1. `bundle.json` 的 `bundleName` 第一段已在列表里：推荐就用它，不必新建。
-2. 第一段不在列表里、但列表非空：推荐改用其中一个已有命名空间，并同步修改 `bundle.json` 的第一段。不要为了迁就本地名字去新建。
-3. 列表为空，或用户明确选「新建」：才执行 `bundle namespace create`。每个工作空间最多 5 个命名空间，未选新建就不要创建。
+1. `bundle.json` 的 `bundleName` 第一段已在列表里：默认用它。
+2. 第一段不在列表里、但列表非空：默认改用其中一个已有命名空间。不要为了迁就本地名字去新建。
+3. 列表为空：默认一个新 slug，并在表里注明「将新建」。用户改成已有项就不用新建；用户改成另一个新 slug 才新建那个。每个工作空间最多 5 个命名空间，用户没选新建就不要 `namespace create`。
 
-确认表里的「命名空间」必须是用户选定的那一项（已有 slug，或用户要新建的 slug）。选定之后 `bundle create --namespace` 和 `bundle.json` 的第一段都用它。
+**默认包名**是 `bundleName` 的第二段。这一段已经符合[包名规则](#软件名称与软件描述)就沿用；不符合就按「厂商或产品-能力」起草一个，作为表里的默认值。
+
+用户确认或修改之后，`bundle create --namespace` / `--name` 和 `bundle.json` 的 `bundleName`（`命名空间/包名`）都用最终值。包名只能用小写字母、数字和 `. _ -`，符号不能连续、不能在首尾；不符合就请用户再改，不要直接建包。
 
 ```markdown
 将创建软件包：
 
 | 字段 | 内容 |
 |------|------|
-| 已有命名空间 | official、acme（推荐 official） |
-| 命名空间 | official（已有） |
+| 已有命名空间 | official、acme |
+| 命名空间（默认，可改） | official |
+| 包名（默认，可改） | dingtalk-robot |
 | 完整名 | official/dingtalk-robot |
 | 软件名称 | 钉钉群机器人 |
 | 软件描述 | 对接钉钉（DingTalk）自定义群机器人 Webhook：向群聊发送文本、Markdown、链接和 ActionCard 卡片消息，支持 @ 指定成员或所有人，加签校验。用于告警通知、审批结果、日报推送。不含企业内部应用的通讯录、审批（请用「钉钉应用」）。 |
@@ -413,10 +418,12 @@ buildify-publish bundle icon delete --name official/dingtalk-robot --icon-name P
 | 封面 | icons/cover.svg（来源：…）；找不到则留空，不传 `--icon` |
 ```
 
-用户选定已有命名空间后直接建包，不要再 `namespace create`：
+回复「确认」即用默认命名空间和包名。要改就直接回复，例如「命名空间改成 acme」或「包名改成 dingtalk-bot」。
+
+用户沿用或改成已有命名空间后直接建包，不要再 `namespace create`：
 
 ```bash
-buildify-publish --json bundle namespaces                       # 先列出，确认表里推荐已有项
+buildify-publish --json bundle namespaces                       # 先列出，确认表给出默认命名空间和默认包名
 buildify-publish --json bundle create --namespace official --name dingtalk-robot \
   --display-name '钉钉群机器人' \
   --summary '对接钉钉（DingTalk）自定义群机器人 Webhook：向群聊发送文本、Markdown、链接和 ActionCard 卡片消息，支持 @ 指定成员或所有人，加签校验。用于告警通知、审批结果、日报推送。不含企业内部应用的通讯录、审批（请用「钉钉应用」）。' \
@@ -424,10 +431,10 @@ buildify-publish --json bundle create --namespace official --name dingtalk-robot
 # 有封面才随 --icon 上传，不要再 update --icon。节点图标在发布第 4 步：先拿到图，再上传，成功后才设置 icon
 ```
 
-只有用户在确认表里选了「新建」才执行下面这一行，并把 `bundle.json` 的 `bundleName` 第一段改成新 slug：
+只有最终命名空间不在已有列表里才执行下面这一行，并把 `bundle.json` 的 `bundleName` 改成最终的 `命名空间/包名`：
 
 ```bash
-buildify-publish --json bundle namespace create --name acme     # 用户明确要新建时才执行
+buildify-publish --json bundle namespace create --name acme     # 最终命名空间不在已有列表里才执行
 ```
 
 `namespace create` 返回 409 表示该 slug 已被其他工作空间占用，请用户换一个或改选已有命名空间，并同步修改

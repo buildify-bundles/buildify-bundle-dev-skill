@@ -54,8 +54,8 @@ Bundle 开发进度：
 `bundle doc get` 确认，再上传 JAR。发布时核对 `bundle.json` 的图标名是否已在 `bundle icons` 里，没有的才创建：先拿到图，再上传，成功后才设置 `icon`；找不到就保持原值。章节约定见 [reference/publishing.md](reference/publishing.md#docsmd每个-bundle-必须)。
 
 **软件名称与软件描述**（控制台字段，对应 `--display-name` / `--summary`）：编排 Agent 只靠
-`bundle list -k` 命中后再读这两项决定用哪个包。建包前先 `bundle namespaces`，优先用已有命名空间，用户选择新建才 `namespace create`。再按已有节点起草，用确认表列出命名空间、名称、描述、
-搜包关键词、能覆盖 / 不覆盖，等用户确认再 `bundle create`。名称写「官方中文名 + 能力」
+`bundle list -k` 命中后再读这两项决定用哪个包。建包前先 `bundle namespaces`，确认表给出默认命名空间（优先已有）和默认包名，写明可以改。用户确认或改完后，把 `bundle.json` 的 `bundleName` 改成最终的 `命名空间/包名`，再 `bundle create`；要新建命名空间时才 `namespace create`。再按已有节点起草，确认表同时列出软件名称、描述、
+搜包关键词、能覆盖 / 不覆盖。名称写「官方中文名 + 能力」
 （如「钉钉群机器人」）；描述固定句式：对接对象（含英文名）→ 按节点列出的动作 → 典型场景 →
 与相近包的边界（「不含 xxx，请用「yyy」」）。规范、确认表和正反例见
 [reference/publishing.md](reference/publishing.md#软件名称与软件描述)。

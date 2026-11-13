@@ -598,7 +598,7 @@ def check_error_codes(project: Path, java_files: list) -> None:
 
 
 def check_icon_files(project: Path, declared: dict) -> None:
-    """icons/ 下的文件名就是 bundle.json 中的 icon（平台存储名），cover.* 是软件包封面。"""
+    """icons/ 里的文件必须被节点引用。节点 icon 可以只在平台上，不要求本地有同名文件。"""
     icons_dir = project / "icons"
     used = set()
     for name, node in declared.items():
@@ -609,10 +609,6 @@ def check_icon_files(project: Path, declared: dict) -> None:
         if Path(icon).stem.lower() == COVER_STEM:
             warn("bundle.json", f"节点 '{name}' icon '{icon}' 与软件包封面同名；"
                                 f"{COVER_STEM}.* 留给封面，节点图标换个名字")
-        elif not (icons_dir / icon).is_file():
-            warn("bundle.json", f"节点 '{name}' icon '{icon}' 在 icons/ 下没有同名文件；"
-                                f"把图片存为 icons/{icon}，发布时若平台还没有该图标再按文件名上传，"
-                                "找不到合适图片就改回 \"default.svg\"")
     if not icons_dir.is_dir():
         return
     for path in sorted(icons_dir.iterdir()):

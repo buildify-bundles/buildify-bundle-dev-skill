@@ -299,28 +299,30 @@ buildify-publish --json config profiles
 
 | 文件 | 用途 | 对应关系 |
 |---|---|---|
-| `icons/cover.svg`（或 `cover.png` 等） | 软件包封面 | 仅 `bundle create` 的 `--icon` |
+| `icons/cover.svg`（或 `cover.png` 等） | 软件包封面 | 仅 `bundle create` 的 `--icon`；找不到封面时不传 |
 | `icons/<图标名>.<扩展名>` | 节点图标 | 文件名 = 节点 `icon` 值 = 平台存储名，如 `icons/DingTalk.svg` ↔ `"icon": "DingTalk.svg"` |
 
-图标名只能用字母、数字、`_`、`-`，`cover` 留给封面。`bundle.json` 里引用的每个非
-`default.svg` 图标都必须在 `icons/` 下有同名文件，`icons/` 下也不要放没人引用的图片，
-校验脚本会两头检查。几个节点用同一个图标时共用一个文件。
+图标名只能用字母、数字、`_`、`-`，`cover` 留给封面。`icons/` 下的文件必须有节点引用
+（封面 `cover.*` 除外），但节点引用的图标可以只存在于平台上，本地没有同名文件是正常的。
+校验脚本不要求自定义 `icon` 在 `icons/` 里有文件；它仍检查节点图标不能与封面同名、
+`icons/` 下不能有没人引用的文件、文件名格式和 1MB 上限。几个节点用同一个图标时共用一个文件。
 
 ### 找图
 
-**每次发布都核对节点图标，只补平台上还没有的。** 先 `bundle icons`，把 `bundle.json` 里每个节点的 `icon` 和列表对比：
+**节点图标：先拿到图，再上传，最后才设置 `icon`。** 每次发布都核对，只补平台上还没有的。
+先 `bundle icons`，把 `bundle.json` 里每个节点的 `icon` 和列表对比：
 
-- `default.svg`：平台自带，视为已存在，不上传。
-- 列表里已有同名存储名：不要重新下载、不要覆盖。用户可能已在控制台换过图。
-- 列表里没有：才创建。本地 `icons/` 已有同名文件就直接上传；没有就按下面的顺序找，找到后存成与 `icon` 值逐字相同的文件再上传。
+- `default.svg`：平台自带，视为已存在，不上传。要换成品牌图标时，按下面的顺序先拿到图。
+- 列表里已有同名存储名：不要重新下载、不要覆盖，也不要改 `bundle.json`。用户可能已在控制台换过图。
+- 列表里没有：才创建。按下面的顺序先拿到图；拿到并上传成功后，才把该节点的 `icon` 写成与文件名逐字相同的存储名。
 
 查找顺序，**不要自己画 SVG**：
 
-1. 用户给了图片，或 `icons/<icon 值>` 已经存在，就用这份文件。
+1. 用户给了图片，或 `icons/<icon 值>` 已经存在，就用这份文件。当前还是 `default.svg`、准备换成品牌图标时，文件名用打算写入的存储名。
 2. [Devicons API](https://devicons.io/docs/api/)（不用密钥）。把图标名去掉扩展名得到查询词（`DingTalk.svg` → `dingtalk`）：
    - 先 `GET https://devicons.io/api/v1/icons/<查询词>.json`。200 且不是 `deprecated` 时，下载响应里的 `svg`。
    - 404 再 `GET https://devicons.io/api/v1/search?q=<查询词>&limit=5`。只接受 `slug`、`name` 或 `aliases` 与查询词完全相同（忽略大小写）的结果，用该条的 `svg`。模糊结果、别的品牌不要用。
-3. 没有命中：把该节点的 `icon` 改成 `default.svg`，不要上传默认图。告诉用户这张是占位，可以稍后在控制台替换。
+3. 没有命中：跳过该节点。`bundle.json` 里的 `icon` 保持原值，不改回 `default.svg`，也不上传默认图。手动改过的值不会被覆盖。
 
 ```bash
 curl -fsSL "https://devicons.io/api/v1/icons/postgresql.json"
@@ -328,9 +330,13 @@ curl -fsSL "https://devicons.io/api/v1/search?q=postgresql&limit=5"
 curl -fsSL "https://devicons.io/devicons/icons/postgresql.svg" -o icons/Postgresql.svg
 ```
 
-下载后检查：文件确实是图片（SVG 以 `<svg` 或 `<?xml` 开头，不是 HTML 错误页），不含 `<script>`、外链资源，≤ 1MB。向用户列出每个新建图标的文件、用途和来源；用了默认图的节点单独列出，并写明可在控制台替换。
+下载后检查：文件确实是图片（SVG 以 `<svg` 或 `<?xml` 开头，不是 HTML 错误页），不含 `<script>`、外链资源，≤ 1MB。
+检查通过后上传。**上传成功之后**才设置 `icon`：当前仍是 `default.svg` 时，写成与文件名逐字相同的存储名；已经写好的自定义值不要改成别的名字，也不要改回 `default.svg`。上传失败同样保持原值。
+向用户列出每个新建图标的文件、用途和来源。发布结束时把跳过的节点单独列出，方便稍后在控制台补图。
 
-封面只在**创建软件包**时找一次，顺序相同：用户提供的文件、Devicons、否则 `curl -fsSL https://bundles.buildify.cn/icons/default.svg -o icons/cover.svg`。之后发布不要 `bundle update --icon`。
+封面只在**创建软件包**时找一次，顺序相同：用户提供的文件，然后 Devicons。找到了才在 `bundle create` 时传 `--icon`。
+找不到就不下载 `https://bundles.buildify.cn/icons/default.svg`，建包命令也不带 `--icon`
+（`buildify-publish bundle create --help` 里 `--icon` 是可选的）。之后发布不要 `bundle update --icon`。
 
 厂商 Bundle 的节点通常共用一张品牌图标；只有用户要求或节点差异明显时才为单个节点另找。
 
@@ -345,11 +351,12 @@ buildify-publish --json bundle icons --name official/dingtalk-robot   # 与 bund
 buildify-publish bundle icon upload --name official/dingtalk-robot \
   --icon-name Postgresql --file icons/Postgresql.svg
 
-buildify-publish --json bundle icons --name official/dingtalk-robot   # 再对一次，非 default.svg 的 icon 都应在列表里
+buildify-publish --json bundle icons --name official/dingtalk-robot   # 再对一次，本次上传成功的应在列表里
 buildify-publish bundle icon delete --name official/dingtalk-robot --icon-name Postgresql.svg   # 删除要带扩展名
 ```
 
-`default.svg` 不上传。封面只在 `bundle create --icon` 时上传。
+`default.svg` 不上传。封面只在 `bundle create --icon` 时上传；没有封面文件就不传 `--icon`。
+跳过的节点不要求已在图标列表里，发布结束时列给用户。
 
 ## 发布流程
 
@@ -359,8 +366,8 @@ buildify-publish bundle icon delete --name official/dingtalk-robot --icon-name P
 |---|---|
 | 1 | `buildify-publish --json key test`，向用户确认 `tenantName` 就是目标工作空间 |
 | 2 | `bundle info --name <bundleName>`。存在就跳到第 4 步；不存在走第 3 步 |
-| 3 | 不存在时建包：先 `bundle namespaces`，优先用已有命名空间；用户选择新建才 `namespace create`。封面按[找图](#找图)准备后 `bundle create --icon`。节点图标留到第 4 步 |
-| 4 | **核对图标**（新建和再次发布都做）：`bundle icons` 与 `bundle.json` 的 `icon` 对比。已有的不动；没有的按[找图](#找图)创建并上传。Devicons 找不到的节点改为 `default.svg`，告诉用户稍后在控制台替换 |
+| 3 | 不存在时建包：先 `bundle namespaces`，优先用已有命名空间；用户选择新建才 `namespace create`。封面按[找图](#找图)准备。找到封面文件才 `bundle create --icon`；找不到就省略 `--icon`，不下载默认图。节点图标留到第 4 步 |
+| 4 | **核对图标**（新建和再次发布都做）：`bundle icons` 与 `bundle.json` 的 `icon` 对比。平台已有的不动。没有的按[找图](#找图)：先拿到图，再上传，上传成功后才设置 `icon`。找不到就跳过，保持原值，结束时列出这些节点，方便在控制台补图 |
 | 5 | 读当前版本：`mvn -q -Dexpression=project.version -DforceStdout help:evaluate`，按 SemVer 修改 `pom.xml` 的 `<version>` |
 | 6 | 重写 `CHANGELOG.md`，仅本 bundle、本版本一节 |
 | 7 | 更新 `docs.md`（用户使用文档，给用户和编排 Agent）：对照本版本逐项改适用、凭证类型、每个节点的何时使用 / 参数 / 输出路径 / 出口、错误码。CHANGELOG 里提到的变化都要体现。不要改 README 来代替这份文档。节点增删或对接范围变了时，按[软件名称与软件描述](#软件名称与软件描述)重写，经用户确认后 `bundle update --display-name / --summary`，并同步使用文档标题和第一段 |
@@ -379,7 +386,7 @@ buildify-publish bundle icon delete --name official/dingtalk-robot --icon-name P
 
 `bundle info` 返回 404 时说明平台上还没有这个包。按下文[软件名称与软件描述](#软件名称与软件描述)
 根据**已经实现或即将实现的节点**起草，用确认表给用户看**一次**，等确认再执行命令。
-不要自己编名字，也不要照抄使用文档标题或「xxx 工具」。确认表通过后，封面按[找图](#找图)准备并随 `bundle create --icon` 上传。节点图标在发布流程第 4 步核对：平台已有的不动，没有的再创建。
+不要自己编名字，也不要照抄使用文档标题或「xxx 工具」。确认表通过后，封面按[找图](#找图)准备：找到文件才随 `bundle create --icon` 上传，找不到就省略 `--icon`。节点图标在发布流程第 4 步核对：平台已有的不动，没有的先拿到图再上传，成功后才设置 `icon`。
 
 **命名空间优先用已有的。** 起草确认表之前先执行 `buildify-publish --json bundle namespaces`，把本工作空间已有的命名空间列给用户，并标出推荐项：
 
@@ -403,7 +410,7 @@ buildify-publish bundle icon delete --name official/dingtalk-robot --icon-name P
 | 能覆盖 | 向钉钉群发文本 / Markdown / 链接 / ActionCard，@ 成员或所有人 |
 | 不覆盖 | 通讯录、审批、钉钉企业内部应用 OpenAPI |
 | 可见性 | internal |
-| 封面 | icons/cover.svg（来源：…） |
+| 封面 | icons/cover.svg（来源：…）；找不到则留空，不传 `--icon` |
 ```
 
 用户选定已有命名空间后直接建包，不要再 `namespace create`：
@@ -413,8 +420,8 @@ buildify-publish --json bundle namespaces                       # 先列出，�
 buildify-publish --json bundle create --namespace official --name dingtalk-robot \
   --display-name '钉钉群机器人' \
   --summary '对接钉钉（DingTalk）自定义群机器人 Webhook：向群聊发送文本、Markdown、链接和 ActionCard 卡片消息，支持 @ 指定成员或所有人，加签校验。用于告警通知、审批结果、日报推送。不含企业内部应用的通讯录、审批（请用「钉钉应用」）。' \
-  --icon icons/cover.svg                                        # 找不到图时 cover.svg 为下载的默认图标
-# 封面已随 --icon 上传，不要再 update --icon。节点图标在发布第 4 步核对，只补平台上没有的
+  --icon icons/cover.svg                                        # 只有找到封面才加这一行；找不到就删掉
+# 有封面才随 --icon 上传，不要再 update --icon。节点图标在发布第 4 步：先拿到图，再上传，成功后才设置 icon
 ```
 
 只有用户在确认表里选了「新建」才执行下面这一行，并把 `bundle.json` 的 `bundleName` 第一段改成新 slug：

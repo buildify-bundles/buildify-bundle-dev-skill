@@ -8,7 +8,9 @@
 
 from __future__ import annotations
 
+import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -19,6 +21,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 SCAFFOLD = ROOT / "scripts" / "scaffold_bundle.py"
 VALIDATE = ROOT / "scripts" / "validate_bundle.py"
+UPDATE_CHECK = ROOT / "scripts" / "update_check.py"
 
 BASE_ARGS = ["--group-id", "com.example", "--artifact-id", "demo",
              "--bundle-name", "example/demo", "--package", "com.example.bundle"]
@@ -182,9 +185,9 @@ WARNING_MUTATIONS = [
      f"{RES}/bundle.json", '"icon": "default.svg",', "", "缺少 icon"),
     ("icon written as a path",
      f"{RES}/bundle.json", '"icon": "default.svg",', '"icon": "icons/http.svg",', "应为上传后的存储名"),
-    ("custom icon without file in icons/",
-     f"{RES}/bundle.json", '"icon": "default.svg",', '"icon": "DingTalk.svg",',
-     "把图片存为 icons/DingTalk.svg"),
+    ("node icon named like the cover",
+     f"{RES}/bundle.json", '"icon": "default.svg",', '"icon": "cover.svg",',
+     "与软件包封面同名"),
     ("node missing from usage doc",
      "docs.md", "MyTrigger", "TriggerGone", "未介绍节点 MyTrigger"),
     ("credential type missing from usage doc",
@@ -271,6 +274,17 @@ class ValidatorMutationTest(ScriptTestCase):
         (icons / "Unused.svg").write_text("<svg/>", encoding="utf-8")
         result = self.validate(project)
         self.assertIn("没有节点引用这个图标", result.stdout)
+
+    def test_custom_icon_without_local_file_is_allowed(self):
+        project = self.copy_full()
+        path = project / RES / "bundle.json"
+        path.write_text(path.read_text(encoding="utf-8")
+                        .replace('"icon": "default.svg"', '"icon": "DingTalk.svg"', 1),
+                        encoding="utf-8")
+        result = self.validate(project, "--strict")
+        self.assertEqual(result.returncode, 0, result.stdout)
+        self.assertNotIn("没有同名文件", result.stdout)
+        self.assertNotIn("default.svg", result.stdout)
 
     def test_trigger_without_any_backpressure_is_flagged(self):
         project = self.copy_full()
@@ -417,6 +431,101 @@ class ErrorPrefixTest(ScriptTestCase):
     def test_missing_directory(self):
         result = self.validate(self.tmp / "does-not-exist")
         self.assertEqual(result.returncode, 1)
+
+
+SEMVER = re.compile(r"^(\d+)\.(\d+)\.(\d+)$")
+
+
+def semver(text: str) -> tuple:
+    match = SEMVER.match(text)
+    assert match, f"不是 semver: {text!r}"
+    return tuple(int(p) for p in match.groups())
+
+
+class UpdateCheckTest(unittest.TestCase):
+
+    @classmethod
+    def setUpClass(cls):
+        cls.tmp = Path(tempfile.mkdtemp(prefix="bundle-skill-update-"))
+        cls.local = json.loads((ROOT / "version.json").read_text(encoding="utf-8"))
+
+    @classmethod
+    def tearDownClass(cls):
+        shutil.rmtree(cls.tmp, ignore_errors=True)
+
+    def check(self, *args: str, env: dict = None) -> dict:
+        result = subprocess.run([sys.executable, str(UPDATE_CHECK), *args],
+                                capture_output=True, text=True, encoding="utf-8",
+                                env={**os.environ, **(env or {})})
+        self.assertEqual(result.returncode, 0, result.stderr)
+        lines = result.stdout.strip().splitlines()
+        self.assertEqual(len(lines), 1, result.stdout)
+        return json.loads(lines[0])
+
+    def remote(self, name: str, **manifest) -> str:
+        path = self.tmp / name
+        path.write_text(json.dumps(manifest, ensure_ascii=False), encoding="utf-8")
+        return path.as_uri()
+
+    def bumped(self, index: int) -> str:
+        parts = list(semver(self.local["version"]))
+        parts[index] += 1
+        parts[index + 1:] = [0] * (2 - index)
+        return ".".join(map(str, parts))
+
+    def test_local_version_json_is_valid(self):
+        self.assertLessEqual(semver(self.local["minVersion"]), semver(self.local["version"]))
+        self.assertRegex(self.local["date"], r"^\d{4}-\d{2}-\d{2}$")
+        notes = self.local["notes"]
+        self.assertTrue(isinstance(notes, list) and 1 <= len(notes) <= 3, notes)
+        self.assertTrue(all(isinstance(n, str) and n.strip() for n in notes), notes)
+
+    def test_newer_version_is_reported(self):
+        latest = self.bumped(2)
+        result = self.check("--url", self.remote("newer.json", version=latest,
+                                                 minVersion=self.local["version"],
+                                                 date="2099-01-01", notes=["改了 A", "改了 B"]))
+        self.assertEqual(result["checked"], "url")
+        self.assertEqual(result["current"], self.local["version"])
+        self.assertEqual(result["latest"], latest)
+        self.assertTrue(result["updateAvailable"])
+        self.assertFalse(result["required"])
+        self.assertEqual(result["notes"], ["改了 A", "改了 B"])
+        self.assertEqual(Path(result["skillDir"]), ROOT)
+
+    def test_below_min_version_is_required(self):
+        latest = self.bumped(0)
+        result = self.check("--url", self.remote("required.json", version=latest,
+                                                 minVersion=latest, notes=["必须更新"]))
+        self.assertTrue(result["updateAvailable"])
+        self.assertTrue(result["required"])
+
+    def test_same_version_is_quiet(self):
+        result = self.check("--url", self.remote("same.json", version=self.local["version"],
+                                                 minVersion=self.local["minVersion"],
+                                                 notes=["不应展示"]))
+        self.assertEqual(result["checked"], "url")
+        self.assertFalse(result["updateAvailable"])
+        self.assertFalse(result["required"])
+        self.assertEqual(result["notes"], [])
+
+    def test_unreachable_or_invalid_remote_does_not_fail(self):
+        broken = self.tmp / "broken.json"
+        broken.write_text("<html>not json</html>", encoding="utf-8")
+        for label, url in {"missing": (self.tmp / "missing.json").as_uri(),
+                           "not json": broken.as_uri(),
+                           "no version": self.remote("noversion.json", notes=["x"])}.items():
+            with self.subTest(label):
+                result = self.check("--url", url)
+                self.assertEqual(result["checked"], "failed")
+                self.assertFalse(result["updateAvailable"])
+                self.assertIsNone(result["latest"])
+
+    def test_disabled_by_env_skips_network(self):
+        result = self.check(env={"BUILDIFY_SKILL_NO_UPDATE_CHECK": "1"})
+        self.assertEqual(result["checked"], "skipped")
+        self.assertEqual(result["current"], self.local["version"])
+        self.assertFalse(result["updateAvailable"])
 
 
 @unittest.skipUnless(os.environ.get("RUN_MAVEN") == "1" and shutil.which("mvn"),

@@ -107,15 +107,20 @@ SKILL_DIR="<skills 根目录>/buildify-bundle-dev"
 PRIMARY="https://github.com/buildify-bundles/buildify-bundle-dev-skill.git"
 FALLBACK="https://gitee.com/buildify/buildify-bundle-dev-skill.git"
 export GIT_TERMINAL_PROMPT=0
+skill_version() {
+  python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["version"])' \
+    "$SKILL_DIR/version.json" 2>/dev/null || echo "未知"
+}
 
 if [ ! -e "$SKILL_DIR" ]; then
   mkdir -p "$(dirname "$SKILL_DIR")"
   git clone --depth 1 "$PRIMARY" "$SKILL_DIR" || git clone --depth 1 "$FALLBACK" "$SKILL_DIR"
-  echo "ACTION=installed"
+  echo "ACTION=installed $(skill_version)"
 elif ! git -C "$SKILL_DIR" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
   echo "ERROR: $SKILL_DIR 已存在但不是 git 仓库，未做任何修改"; exit 1
 else
   OLD=$(git -C "$SKILL_DIR" rev-parse --short HEAD)
+  OLD_VERSION=$(skill_version)
   if [ -n "$(git -C "$SKILL_DIR" status --porcelain)" ]; then
     STASH_MSG="buildify-bundle-dev 更新前备份 $(date +%Y%m%d-%H%M%S)"
     git -C "$SKILL_DIR" stash push -u -m "$STASH_MSG"
@@ -123,10 +128,11 @@ else
   fi
   git -C "$SKILL_DIR" pull --ff-only \
     || git -C "$SKILL_DIR" pull --ff-only "$FALLBACK" main
-  echo "ACTION=updated $OLD -> $(git -C "$SKILL_DIR" rev-parse --short HEAD)"
+  echo "ACTION=updated $OLD_VERSION -> $(skill_version) ($OLD -> $(git -C "$SKILL_DIR" rev-parse --short HEAD))"
 fi
 
 test -f "$SKILL_DIR/SKILL.md" && test -f "$SKILL_DIR/scripts/scaffold_bundle.py" \
+  && test -f "$SKILL_DIR/version.json" && test -f "$SKILL_DIR/scripts/update_check.py" \
   && grep -q '^name: buildify-bundle-dev$' "$SKILL_DIR/SKILL.md" && echo "VERIFY=ok"
 )
 ```
@@ -139,7 +145,7 @@ test -f "$SKILL_DIR/SKILL.md" && test -f "$SKILL_DIR/scripts/scaffold_bundle.py"
 
 成功时用三四句话说清：
 
-1. 结果：新装还是更新（带上 `旧版本 -> 新版本`）、`$SKILL_DIR`、依据的证据（本会话技能路径，或产品名与父进程一致）。
+1. 结果：新装（带上版本号）还是更新（带上 `ACTION=` 里的 `旧版本 -> 新版本`，取自 `version.json`；旧副本没有该文件时显示为「未知」）、`$SKILL_DIR`、依据的证据（本会话技能路径，或产品名与父进程一致）。版本有变化时附上新 `version.json` 的 `notes`；版本没变就说已是最新。
 2. 有备份时：备份名和 `stash pop` 恢复命令。
 3. **重启 Agent 或新开对话**后技能才会生效。
 4. 发布 Bundle 要用发布密钥。提前告诉用户在控制台 **系统设置 → API Keys → buildify-publish-cli 密钥** 里创建；第一次发布时把密钥（`keyId.secret`）发给你就行。

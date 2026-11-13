@@ -2,7 +2,7 @@
 
 这个文件给开发这个 Bundle 的人看。平台上给用户和编排 Agent 看的是 [`docs.md`](docs.md)。
 
-发布时用 `bundle doc set --file docs.md` 同步用户使用文档，不要同步本文件。同时核对 `bundle.json` 的图标：平台已有的不覆盖，没有的用 Devicons 创建，找不到则改为 `default.svg`，稍后可在控制台替换。封面只在创建软件包时上传。
+发布时用 `bundle doc set --file docs.md` 同步用户使用文档，不要同步本文件。同时核对 `bundle.json` 的图标：先拿到图，再上传，成功后才设置 `icon`；找不到就保持原值，不改回 `default.svg`。封面找不到时不传 `--icon`。
 
 ## 构建
 

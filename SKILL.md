@@ -7,7 +7,8 @@ description: >-
   debugs, reviews or publishes a Buildify bundle; mentions FlowNode, bundle.json,
   @FlowNodeDescription, buildify-bundle-api, credentialsType, MethodExecutor,
   trigger, webhook or credential; or talks about 节点开发, 工作流节点, 动态表单, 凭证,
-  触发器, Webhook, 验签, 回调, 微信支付, 支付宝, Stripe or 发布 Bundle.
+  触发器, Webhook, 验签, 回调, 微信支付, 支付宝, Stripe, 发布 Bundle, 更新 skill or
+  skill 版本.
 ---
 
 # Buildify Bundle 开发
@@ -21,6 +22,8 @@ Bundle 是 Buildify 工作流引擎的节点包（fat JAR），由独立 `Bundle
 ## 工作流
 
 复制清单并逐项勾选：
+
+开始任务时先跑一次 `python3 <skill-root>/scripts/update_check.py`，按[Skill 版本](#skill-版本)处理输出。
 
 ```
 Bundle 开发进度：
@@ -48,7 +51,7 @@ Bundle 开发进度：
 **发布时**：只同步用户使用文档 `docs.md`，不要同步 `README.md`。用户在软件包页查看，编排 Agent 用 `bundle doc` 阅读后编排节点。
 按本版本更新：适用、凭证类型、每个节点的何时使用 / 参数 / 输出路径 / 出口、错误码；不要写项目结构、
 构建、ClassLoader。校验通过后，在 `bundle upload` **之前** `bundle doc set --file docs.md` 并
-`bundle doc get` 确认，再上传 JAR。发布时核对 `bundle.json` 的图标名是否已在 `bundle icons` 里，没有的才创建。章节约定见 [reference/publishing.md](reference/publishing.md#docsmd每个-bundle-必须)。
+`bundle doc get` 确认，再上传 JAR。发布时核对 `bundle.json` 的图标名是否已在 `bundle icons` 里，没有的才创建：先拿到图，再上传，成功后才设置 `icon`；找不到就保持原值。章节约定见 [reference/publishing.md](reference/publishing.md#docsmd每个-bundle-必须)。
 
 **软件名称与软件描述**（控制台字段，对应 `--display-name` / `--summary`）：编排 Agent 只靠
 `bundle list -k` 命中后再读这两项决定用哪个包。建包前先 `bundle namespaces`，优先用已有命名空间，用户选择新建才 `namespace create`。再按已有节点起草，用确认表列出命名空间、名称、描述、
@@ -56,6 +59,21 @@ Bundle 开发进度：
 （如「钉钉群机器人」）；描述固定句式：对接对象（含英文名）→ 按节点列出的动作 → 典型场景 →
 与相近包的边界（「不含 xxx，请用「yyy」」）。规范、确认表和正反例见
 [reference/publishing.md](reference/publishing.md#软件名称与软件描述)。
+
+### Skill 版本
+
+`update_check.py` 输出一行 JSON，按它处理，同一次对话只提示一次：
+
+- `updateAvailable` 为 true、`required` 为 false：在第一条回复开头说一句，然后照常工作，不要停下等回答：
+
+  > buildify-bundle-dev 有新版本 {latest}（当前 {current}）：{notes 用「；」连起来}。说「更新 skill」我来更新。
+
+- `required` 为 true：当前版本太旧，按它开发或发布可能出错。**先停下**，说明当前版本、最新版本和要点，请用户确认更新；确认后更新再继续，用户坚持不更新就照常工作，结束时写明版本过旧。
+- `checked` 为 `failed` / `skipped`，或已是最新：什么都不说。
+
+**用户说「更新 skill」时：** 对输出里的 `skillDir` 按 [INSTALL.md](INSTALL.md) 第 3 节原地更新（`pull --ff-only`，有本地改动先 stash），
+再跑 `update_check.py --force` 确认 `updateAvailable` 为 false。汇报旧版本、新版本和新 `version.json` 的 `notes`，有 stash 时给出恢复命令，
+并提醒新版说明要在**新开的对话**里才生效。不要改用户的 git 配置，也不要删目录重装。
 
 ### 按任务读取（勿一次全读）
 
@@ -103,14 +121,23 @@ python3 <skill-root>/scripts/scaffold_bundle.py \
 
 **validate_bundle.py** — 校验命名、SPI、pom、表单、凭证、complete、RPC、资源泄漏、
 参数变更后的重启 / `onParametersUpdated` 热更新；
-`bundle.json` 节点缺 `icon`（默认应为 `"default.svg"`）、自定义 `icon` 在 `icons/` 下没有同名文件、
-`icons/` 下有没人引用的图片、使用文档漏列节点或凭证类型、使用文档写入了开发内容、`bundleName` 不符合平台命名规则，
+`bundle.json` 节点缺 `icon`（默认应为 `"default.svg"`）、节点图标与封面同名、
+`icons/` 下有没人引用的图片、图标文件名不合法或超过 1MB、使用文档漏列节点或凭证类型、使用文档写入了开发内容、`bundleName` 不符合平台命名规则，
 触发器用了无界队列 / 无界线程池、在循环里直接 `tell*`、用 `tellSuccess` 而不是 `tryTellSuccess`、没有任何限流，
 以及 resources 下的 SVG 记 WARNING（图标放 `icons/`，发布时平台还没有才上传，不要打进 JAR）：
 
 ```bash
 python3 <skill-root>/scripts/validate_bundle.py ./my-bundle           # ERROR 时 exit 1
 python3 <skill-root>/scripts/validate_bundle.py ./my-bundle --strict  # WARNING 也失败
+```
+
+**update_check.py** — 本 skill 有没有新版本：本地 `version.json` 对比仓库 `main` 上的 `version.json`，
+先 GitHub 后 Gitee，每个 3 秒超时，结果缓存 24 小时。输出一行 JSON，退出码总是 0。
+设置 `BUILDIFY_SKILL_NO_UPDATE_CHECK=1` 时不联网：
+
+```bash
+python3 <skill-root>/scripts/update_check.py           # 24 小时内复用缓存
+python3 <skill-root>/scripts/update_check.py --force   # 跳过缓存，更新后确认用
 ```
 
 ## 项目骨架要点
@@ -146,7 +173,7 @@ Maven 依赖：`cn.buildify:buildify-bundle-api`（版本见 `templates/project/
 6. 已知错误用 `FlowNodeException`，`initialize` 参数校验优先用 SDK 的 `Validator`。接口调用失败（HTTP 非 2xx 或业务码非 0）时用脚手架生成的 `HttpErrors.httpError` / `apiError`，把 `statusCode` 和脱敏后的 `body` 放进 `msg.error.metadata`；代码中的错误码都要写进使用文档「错误码」一节。触发器遵守
    `isTest()` / `createTriggerMessage(payload, eventId)` / `complete`（位置可按说明调整）/ `destroy()`。`eventId` 同时写入 payload，
    `triggerNodeId` 取 `getWorkflowNodeId()`，`workerId` 取 `getWorkerId()`
-7. 发布时核对 `bundle.json` 的 `icon` 是否已在 `bundle icons` 中。已有的不覆盖；没有的才创建：本地 `icons/` 有同名文件就上传，否则用 [Devicons API](https://devicons.io/docs/api/) 查找（只接受名称完全匹配的结果）。找不到就把该节点改成 `default.svg`（`https://bundles.buildify.cn/icons/default.svg`），并告诉用户稍后在控制台替换。不要自己画。封面只在 `bundle create --icon` 时上传。文件名与 `icon` 值逐字一致（`icons/DingTalk.svg` ↔ `"icon": "DingTalk.svg"`），不打进 JAR、不放 `src/main/resources`，见
+7. 发布时核对 `bundle.json` 的 `icon` 是否已在 `bundle icons` 中。已有的不覆盖；没有的才创建，顺序是先拿到图，再上传，最后才设置 `icon`。本地 `icons/` 有同名文件就用这份文件，否则用 [Devicons API](https://devicons.io/docs/api/) 查找（只接受名称完全匹配的结果）。找不到就跳过：`icon` 保持原值，不改回 `default.svg`，手动改过的值不会被覆盖；发布结束时列出这些节点，方便稍后在控制台补图。不要自己画。封面只在 `bundle create --icon` 时上传；找不到封面就不下载默认图，建包也不带 `--icon`。文件名与 `icon` 值逐字一致（`icons/DingTalk.svg` ↔ `"icon": "DingTalk.svg"`），图标可以只存在于平台上，不打进 JAR、不放 `src/main/resources`，见
    [reference/publishing.md](reference/publishing.md#命名与图标)
 8. 需要人逐项填写的数组用 `FixedCollection`（可增删），不要用 `JsonEditor` 手写 JSON 数组
 9. 参数变更要么 `isRestartRequired` 返回 `true` 并重启，要么 `onParametersUpdated` 用新参数重新赋值。路由、cron、连接必须重启

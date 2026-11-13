@@ -527,9 +527,10 @@ def main() -> None:
     print("     发布建包时先 bundle namespaces，优先用已有命名空间，用户选择新建才 namespace create；"
           "软件名称（--display-name）= 官方中文名+能力；软件描述（--summary）按"
           "「对接谁：能做什么。用于场景。不含边界」写，见 reference/publishing.md")
-    print("     发布时核对 bundle.json 的 icon 是否已在平台图标里：没有才创建。查找用 Devicons API"
-          "（https://devicons.io/docs/api/，只接受名称完全匹配）；找不到则该节点改为 default.svg，"
-          "告诉用户稍后在控制台替换。封面只在 bundle create --icon 时上传")
+    print("     发布时核对 bundle.json 的 icon 是否已在平台图标里：没有才创建。"
+          "先拿到图（Devicons API，https://devicons.io/docs/api/，只接受名称完全匹配），"
+          "再上传，成功后才设置 icon。找不到就保持原值，不改回 default.svg，"
+          "结束时列出这些节点。封面只在找到文件时随 bundle create --icon 上传")
     print("  2. 编辑 src/main/resources/properties/*.json 定义表单字段")
     print("  3. 实现节点 onMsg 业务逻辑")
     if args.trigger or args.webhook:

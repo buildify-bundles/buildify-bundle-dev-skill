@@ -8,9 +8,9 @@
 - [ ] 使用 `maven.compiler.release=21` 而非 `source`/`target`
 - [ ] `maven-shade-plugin` 配置了 `ServicesResourceTransformer`
 - [ ] `bundle.json` 位于 `src/main/resources` 根目录
-- [ ] 每个节点 `icon` 为 `"default.svg"`，或是 `icons/` 下同名文件的文件名（如 `icons/DingTalk.svg` ↔ `"DingTalk.svg"`）
+- [ ] 每个节点 `icon` 为 `"default.svg"`，或是合法存储名（如 `"DingTalk.svg"`）。本地 `icons/` 有文件时文件名必须与 `icon` 一致；图标也可以只存在于平台上
 - [ ] 图标文件放在 Bundle 根目录 `icons/`，未放进 `src/main/resources`、未打进 JAR；`icons/` 下没有无人引用的图片
-- [ ] 🔍 发布时已用 `bundle icons` 核对 `bundle.json` 的图标名。缺的才创建：本地文件或 Devicons API（名称完全匹配）；找不到则改为 `default.svg`，并告知用户稍后在控制台替换。已有图标不覆盖，不是自己画的
+- [ ] 🔍 发布时已用 `bundle icons` 核对 `bundle.json` 的图标名。缺的才创建：先拿到图（本地文件或 Devicons API，名称完全匹配），再上传，成功后才设置 `icon`。找不到就保持原值，不改回 `default.svg`，并在结束时列出这些节点，方便稍后在控制台补图。已有图标不覆盖，手动改过的值不覆盖，不是自己画的
 - [ ] `bundle.json` 的 `bundleName` 为 `命名空间/包名`，两段只含小写字母、数字和 `. _ -`
 - [ ] 模块根目录存在 `docs.md`（平台用户使用文档）与 `CHANGELOG.md`；`README.md` 不作为平台文档
 
@@ -190,7 +190,7 @@
 - [ ] 🔍 搜包用的中文名、英文名、别名、动作、场景都出现在名称或描述里；同一厂商多个包时名称能区分、描述互相用「请用」指向
 - [ ] 节点 `label` 是中文短名（不是类名），`summary` ≤ 10 字且不是「待补充」
 - [ ] 节点增删或对接范围变化时已 `bundle update --display-name / --summary`，使用文档标题和第一段与软件名称、软件描述一致
-- [ ] 仅新建软件包时：封面 `icons/cover.*` 随 `bundle create --icon` 上传（找不到图时用 `https://bundles.buildify.cn/icons/default.svg`）。节点图标在每次发布时核对，只上传平台上还没有的
+- [ ] 仅新建软件包时：找到封面才随 `bundle create --icon` 上传；找不到就不下载默认图，也不传 `--icon`。节点图标在每次发布时核对：先拿到图，再上传，成功后才设置 `icon`；找不到就跳过并在结束时列出
 - [ ] `docs.md` 已按本版本更新，并在 `bundle upload` **之前** `bundle doc set --file docs.md`，`bundle doc get` 确认已同步。没有把 `README.md` 传上去
 
 ## 源码版本管理

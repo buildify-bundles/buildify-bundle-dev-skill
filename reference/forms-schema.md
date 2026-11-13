@@ -332,12 +332,12 @@ schema。后端原样透传，由前端 `ParameterInputList` 遍历 `properties`
 | `icon` | 推荐 | 默认 `"default.svg"`。自定义时写平台存储名，如 `"HttpTrigger.svg"` |
 | `parameters` | 否 | 与该节点 `properties` 的 `defaultValue` 对齐；无默认值写 `{}` 或省略 |
 
-节点 `icon` 没有合适图片时写 `"default.svg"`。对接厂商的 Bundle 优先用厂商图标：
+新建节点还没有选定图标时写 `"default.svg"`。已经写好的自定义 `icon` 找不到图时保持原值，不要改回 `"default.svg"`。对接厂商的 Bundle 优先用厂商图标：
 
-1. 发布时用 `bundle icons` 核对。平台已有同名图标就不要覆盖。没有时：用户提供的文件优先，否则用 [Devicons API](https://devicons.io/docs/api/) 按图标名精确查找。都没有就写成 `default.svg`（即 `https://bundles.buildify.cn/icons/default.svg`），告诉用户稍后在控制台替换。不要自己画 SVG，也不要放进 `src/main/resources` 或打进 JAR。
-2. 图片存为 Bundle 根目录的 `icons/<图标名>.<扩展名>`，**文件名与 `icon` 值逐字一致**，
+1. 发布时用 `bundle icons` 核对。平台已有同名图标就不要覆盖。没有时先拿到图：用户提供的文件优先，否则用 [Devicons API](https://devicons.io/docs/api/) 按图标名精确查找。拿到并上传成功后，才把 `icon` 写成存储名。找不到就跳过，保持原值，发布结束时列出这些节点，方便稍后在控制台补图。不要自己画 SVG，也不要放进 `src/main/resources` 或打进 JAR。图标可以只存在于平台上。
+2. 本地有图片时存为 Bundle 根目录的 `icons/<图标名>.<扩展名>`，**文件名与 `icon` 值逐字一致**，
    如 `icons/DingTalk.svg` ↔ `"icon": "DingTalk.svg"`。图标名只能用字母、数字、`_`、`-`，`cover` 留给软件包封面。
-3. 只上传平台还没有的：`--icon-name DingTalk --file icons/DingTalk.svg`，再用 `bundle icons` 确认。
+3. 只上传平台还没有的：`--icon-name DingTalk --file icons/DingTalk.svg`，再用 `bundle icons` 确认。上传成功之后才设置 `icon`。
 
 找图来源、下载检查与上传命令见 [publishing.md](publishing.md#命名与图标)。
 
@@ -361,7 +361,7 @@ schema。后端原样透传，由前端 `ParameterInputList` 遍历 `properties`
 | 12 | 用了 `loadOptions` 却无 `allow-create`/`clearable` | 远程失败时用户完全无法配置 |
 | 13 | `provider=bundle` 省略 `dependsOn` | 必须显式写出，无依赖写 `[]` |
 | 14 | 字段用 `type` 而非 `uiComponent` | 一律 `uiComponent` |
-| 15 | 省略 `icon`，或把图标放进 `src/main/resources` | 默认写 `"icon": "default.svg"`；自定义图标存为 `icons/<icon 值>`（文件名与 `icon` 一致）。发布时若平台还没有，再用 `bundle icon upload` 上传 |
+| 15 | 省略 `icon`，或把图标放进 `src/main/resources` | 默认写 `"icon": "default.svg"`。本地有图时存为 `icons/<icon 值>`（文件名与 `icon` 一致）；图标也可以只在平台上。发布时若平台还没有，先拿到图再 `bundle icon upload`，成功后才设置 `icon` |
 | 16 | 可传值字段省略 `expression` | 默认 `"expression": true` 与 `"droppable": true`，否则无法写入 `={{ msg.xxx }}`（`CodeEditor` 除外） |
 | 17 | `CredentialSelect` 设了 `expression: true` | 访问凭证不要开表达式 |
 | 18 | 数组让用户手写 JSON | 用 `FixedCollection`，界面可动态添加项 |

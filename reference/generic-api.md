@@ -3,9 +3,15 @@
 对接三方 HTTP API 时，除了常用操作的专用节点，还要有一个通用调用节点。
 厂商文档里有、但还没做成节点的接口，Agent 读文档后用这个节点调用，不要为每个接口新写一个节点。
 
+**新建包时，「常用操作」是约 3–8 个专用节点。** 按厂商官方文档（只认官方域名上的「快速入门 / 常用 API / 高频场景」）选出，必须包含当前需求，再加同产品自动化里常一起用的动作。参数复杂、表单难表达的接口不做专用节点。不要把「只做一个当前要用的节点 + ApiCall」当成新建包的默认。具体名单以该厂商文档为准，不要照抄成固定清单。
+
+**已有包上补能力时**，只加当前缺的那一个专用节点，不借机把常用清单补全。同包已有 `…ApiCall` 且能按文档填参数覆盖时，用它，不要新做节点。
+
+通用调用节点只承接文档中还没有专用节点的接口。
+
 ## 生成
 
-类名以 `ApiCall` 结尾，并同时提供凭证（鉴权来自凭证，不写进节点参数）：
+类名以 `ApiCall` 结尾，并同时提供凭证（鉴权来自凭证，不写进节点参数）。常用操作各自一个 `--node`，可重复：
 
 ```bash
 python3 <skill-root>/scripts/scaffold_bundle.py \
@@ -13,10 +19,11 @@ python3 <skill-root>/scripts/scaffold_bundle.py \
   --group-id com.example --artifact-id my-api \
   --bundle-name example/my-api --package com.example.api \
   --credential MyApiCredential \
+  --node SendMessage --node GetUser --node ListDepartments \
   --generic-api ApiCall
 ```
 
-常用操作仍用 `--node` 做专用节点。通用节点只承接文档中还没有专用节点的接口。
+上面只是脚手架写法示例，节点个数与类名按官方文档定，落在约 3–8 个专用节点。通用节点只承接文档中还没有专用节点的接口。
 
 ## Agent 怎么填
 

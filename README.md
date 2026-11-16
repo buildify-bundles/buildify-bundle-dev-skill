@@ -23,7 +23,7 @@ Agent 每次开始 Bundle 任务时跑 `scripts/update_check.py`：先读 GitHub
 | 场景 | 入口 |
 |---|---|
 | 新建 Bundle | `scripts/scaffold_bundle.py` |
-| 对接三方 HTTP API | `--generic-api ApiCall`，见 [reference/generic-api.md](reference/generic-api.md) |
+| 对接三方 HTTP API | 新建包先约 3–8 个常用专用节点，再 `--generic-api ApiCall`，见 [reference/generic-api.md](reference/generic-api.md) |
 | 写节点 | [coding-rules.md](coding-rules.md) |
 | 写表单 | [reference/forms-schema.md](reference/forms-schema.md) |
 | 写触发器 | 限流、有界缓冲、`tryTellSuccess`、Webhook 429，见 [reference/backpressure.md](reference/backpressure.md) |
@@ -43,7 +43,7 @@ python3 scripts/scaffold_bundle.py \
 python3 scripts/validate_bundle.py ./my-bundle --strict
 ```
 
-对接三方 HTTP 时加上 `--credential MyApiCredential --generic-api ApiCall`。文档里还没有专用节点的接口，用这个通用节点按文档填写 `method`、`path`、`query`、`headers`、`body`。
+对接三方 HTTP 时，新建包先多次 `--node` 做成约 3–8 个常用专用节点（按官方「快速入门 / 常用 API」，含当前需求），再加 `--credential MyApiCredential --generic-api ApiCall`。文档里还没有专用节点的接口，用这个通用节点按文档填写 `method`、`path`、`query`、`headers`、`body`。已有包上补节点时只做当前缺的那一个。
 
 ## 目录
 

@@ -80,7 +80,7 @@ Bundle 开发进度：
 | 场景 | 读 / 做 |
 |---|---|
 | **新建 Bundle** | 执行下方 `scaffold_bundle.py` |
-| **对接三方 HTTP API** | 加 `--generic-api ApiCall`，见 [reference/generic-api.md](reference/generic-api.md) |
+| **对接三方 HTTP API** | 新建包先按官方常用接口做约 3–8 个专用节点，再加 `--generic-api ApiCall`，见 [reference/generic-api.md](reference/generic-api.md) |
 | **已有项目加节点** | 勿重跑 scaffold；复制 `templates/java/`、`templates/forms/`，并补 SPI；项目里没有 `support/HttpErrors.java`（加触发器时还有 `support/TriggerGuard.java`）时一并复制 |
 | **实现 / 审查节点代码** | [coding-rules.md](coding-rules.md) |
 | **写 / 改表单 schema** | [reference/forms-schema.md](reference/forms-schema.md) |
@@ -116,8 +116,8 @@ python3 <skill-root>/scripts/scaffold_bundle.py \
 可重复：`--node` / `--trigger` / `--webhook` / `--credential PascalCase` /
 `--method ClassName:methodName` / `--generic-api ApiCall`。至少提供一个节点类选项。
 `--error-prefix DINGTALK` 指定错误码前缀（默认由 `artifactId` 推导，`bundle-dingtalk-bot` → `DINGTALK_BOT`）。
-对接三方 HTTP 时加上 `--generic-api`（类名以 `ApiCall` 结尾，且要有 `--credential`）：
-文档里还没有专用节点的接口，Agent 用这个节点按文档填 `method` / `path` / `query` / `headers` / `body`。
+对接三方 HTTP 时，新建包先用多个 `--node` 做成约 3–8 个常用专用节点，再加 `--generic-api`（类名以 `ApiCall` 结尾，且要有 `--credential`）。
+文档里还没有专用节点的接口，Agent 用这个节点按文档填 `method` / `path` / `query` / `headers` / `body`。见 [reference/generic-api.md](reference/generic-api.md)。
 
 **validate_bundle.py** — 校验命名、SPI、pom、表单、凭证、complete、RPC、资源泄漏、
 参数变更后的重启 / `onParametersUpdated` 热更新；
@@ -177,7 +177,7 @@ Maven 依赖：`cn.buildify:buildify-bundle-api`（版本见 `templates/project/
    [reference/publishing.md](reference/publishing.md#命名与图标)
 8. 需要人逐项填写的数组用 `FixedCollection`（可增删），不要用 `JsonEditor` 手写 JSON 数组
 9. 参数变更要么 `isRestartRequired` 返回 `true` 并重启，要么 `onParametersUpdated` 用新参数重新赋值。路由、cron、连接必须重启
-10. 对接三方 HTTP API 时提供以 `ApiCall` 结尾的通用调用节点。未实现的接口按厂商文档填写，不要为每个接口新做节点。这类接口节点不要 `setStatus`（不要显示「就绪」）；状态只留给触发器和长连接
+10. 对接三方 HTTP API 时：新建包先按厂商官方文档的「快速入门 / 常用 API / 高频场景」实现约 3–8 个专用节点（必须包含当前需求；参数复杂、表单难表达的接口不做），再提供一个以 `ApiCall` 结尾的通用调用节点。不要把「只做一个当前节点 + ApiCall」当成新建包的默认。通用调用只承接还没有专用节点的接口，按厂商文档填 `method` / `path` / `query` / `headers` / `body`，不要为每个接口都新做节点。已有包上补节点时，只做当前缺的那一个专用节点，不借机把常用清单补全。这类接口节点不要 `setStatus`（不要显示「就绪」）；状态只留给触发器和长连接
 11. 触发器必须做背压：发消息用 `tryTellSuccess`（`tellSuccess` 在下游过载时会被引擎丢弃，触发器感知不到），
     用脚手架生成的 `support/TriggerGuard` 读取表单 `maxPerSecond`（默认 `0` 不限速）、防止轮询重叠；只用有界缓冲。
     超限时推送型丢弃计数（节点状态黄色）、拉取型跳过本轮或暂停消费、Webhook 返回 429 + `Retry-After`、MQ nack。

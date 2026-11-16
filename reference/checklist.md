@@ -54,8 +54,8 @@
 - [ ] 不触发重启的参数在 `onParametersUpdated()` 中用 **newParameters** 重新赋值
       （与 `initialize()` 共用 `applyParameters()`）；未覆写 `isRestartRequired()` 时任意变化都会重启
 - [ ] 路由、cron、连接、连接池所用参数在变化时让 `isRestartRequired()` 返回 `true`
-- [ ] 对接三方 HTTP API 时包含以 `ApiCall` 结尾的通用调用节点。尚未实现的接口按厂商文档填
-      `method` / `path` / `query` / `headers` / `body`，鉴权走凭证，使用文档保留「通用调用」一节
+- [ ] 对接三方 HTTP API 时：新建包含约 3–8 个常用专用节点（按官方「快速入门 / 常用 API」，含当前需求），以及一个以 `ApiCall` 结尾的通用调用节点。尚未做成专用节点的接口按厂商文档填
+      `method` / `path` / `query` / `headers` / `body`，鉴权走凭证，使用文档保留「通用调用」一节。不要只做一个当前节点 + ApiCall，也不要为每个接口都做专用节点。已有包上补节点时只做当前缺的那一个
 ## 触发器节点
 
 - [ ] 注解同时设置 `isTrigger = true, hasInput = false`

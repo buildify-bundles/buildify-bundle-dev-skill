@@ -8,8 +8,8 @@
 reference/forms-components.md 保持一致。
 
 检查项：命名一致性、SPI 注册、pom 配置、表单 schema 合法性、凭证字段规范、
-消息 complete、触发器约定、Node Service RPC、资源释放、参数重启与热更新、
-异常与日志规范、使用文档/CHANGELOG。
+消息 complete、事件循环上的 sleep / poll / 死循环、触发器约定、Node Service RPC、
+资源释放、参数重启与热更新、异常与日志规范、使用文档/CHANGELOG。
 
 退出码：0 = 通过；1 = 存在 ERROR（--strict 时 WARNING 也算失败）。
 仅依赖 Python 3.8+ 标准库。
@@ -887,6 +887,234 @@ def init_only_parameters(code: str) -> set:
     return read - dynamic
 
 
+_OFF_LOOP_CALL = re.compile(r"\bexecuteBlocking\s*\(|\bnew\s+Thread\s*\(")
+_CONTEXT_SCHEDULE = re.compile(r"\bcontext\s*\.\s*schedule\s*\(")
+_EVENT_LOOP_SLEEP = re.compile(
+    r"\bThread\s*\.\s*sleep\s*\("
+    r"|\bTimeUnit\s*\.\s*[A-Za-z_]+\s*\.\s*sleep\s*\("
+    r"|\bLockSupport\s*\.\s*park(?:Nanos|Until)?\s*\(")
+_EVENT_LOOP_POLL = re.compile(r"\.\s*poll\s*\(\s*[^)\s]")
+_EVENT_LOOP_SPIN = re.compile(r"\bwhile\s*\(\s*true\s*\)|\bfor\s*\(\s*;\s*;\s*\)")
+
+
+def _strip_java_comments(code: str) -> str:
+    """去掉注释，不拆开字符串里的 // 或 /*。"""
+    out = []
+    i = 0
+    n = len(code)
+    while i < n:
+        c = code[i]
+        if c in "\"'":
+            j = i + 1
+            while j < n:
+                if code[j] == "\\":
+                    j += 2
+                    continue
+                if code[j] == c:
+                    j += 1
+                    break
+                j += 1
+            out.append(code[i:j])
+            i = j
+        elif code.startswith("//", i):
+            newline = code.find("\n", i)
+            i = n if newline < 0 else newline
+        elif code.startswith("/*", i):
+            end = code.find("*/", i + 2)
+            i = n if end < 0 else end + 2
+        else:
+            out.append(c)
+            i += 1
+    return "".join(out)
+
+
+def _mask_strings(code: str) -> str:
+    out = []
+    i = 0
+    n = len(code)
+    while i < n:
+        c = code[i]
+        if c in "\"'":
+            j = i + 1
+            while j < n:
+                if code[j] == "\\":
+                    j += 2
+                    continue
+                if code[j] == c:
+                    j += 1
+                    break
+                j += 1
+            out.append(" " * (j - i))
+            i = j
+        else:
+            out.append(c)
+            i += 1
+    return "".join(out)
+
+
+def _closing_paren(code: str, open_paren: int) -> int:
+    depth = 0
+    i = open_paren
+    n = len(code)
+    while i < n:
+        c = code[i]
+        if c in "\"'":
+            i += 1
+            while i < n:
+                if code[i] == "\\":
+                    i += 2
+                    continue
+                if code[i] == c:
+                    break
+                i += 1
+        elif c == "(":
+            depth += 1
+        elif c == ")":
+            depth -= 1
+            if depth == 0:
+                return i
+        i += 1
+    return n - 1
+
+
+def _first_arg(code: str, open_paren: int) -> str:
+    end = _closing_paren(code, open_paren)
+    inner = code[open_paren + 1:end]
+    paren = brace = bracket = 0
+    i = 0
+    while i < len(inner):
+        c = inner[i]
+        if c in "\"'":
+            i += 1
+            while i < len(inner):
+                if inner[i] == "\\":
+                    i += 2
+                    continue
+                if inner[i] == c:
+                    break
+                i += 1
+        elif c == "(":
+            paren += 1
+        elif c == ")":
+            paren -= 1
+        elif c == "{":
+            brace += 1
+        elif c == "}":
+            brace -= 1
+        elif c == "[":
+            bracket += 1
+        elif c == "]":
+            bracket -= 1
+        elif c == "," and paren == brace == bracket == 0:
+            return inner[:i]
+        i += 1
+    return inner
+
+
+def _without_off_loop(body: str) -> str:
+    """executeBlocking 和 new Thread 的参数不在节点事件循环上，不参与本项检查。"""
+    out = []
+    i = 0
+    for match in _OFF_LOOP_CALL.finditer(body):
+        if match.start() < i:
+            continue
+        paren = body.find("(", match.start())
+        if paren < 0 or paren >= match.end():
+            continue
+        out.append(body[i:match.start()])
+        i = _closing_paren(body, paren) + 1
+    out.append(body[i:])
+    return "".join(out)
+
+
+def _task_body(arg: str, methods: dict) -> str:
+    text = arg.strip()
+    if "->" not in text:
+        ref = re.search(r"::\s*([A-Za-z_]\w*)\s*$", text)
+        if ref and ref.group(1) in methods:
+            return methods[ref.group(1)][1]
+        return ""
+    rest = text[text.find("->") + 2:].strip()
+    if rest.startswith("{"):
+        return _brace_block(rest, 0)
+    return rest
+
+
+def _executor_receivers(code: str) -> str:
+    names = re.findall(
+        r"\b([A-Za-z_]\w*)\s*=\s*[^;\n]*\bgetExecutor\s*\(\s*\)", code)
+    parts = [r"getExecutor\s*\(\s*\)"]
+    parts.extend(re.escape(name) for name in names)
+    return "|".join(parts)
+
+
+def _scheduled_task_bodies(code: str, methods: dict) -> list:
+    """从去掉注释的源码里取出调度回调。字符串里的同名调用不计入。"""
+    masked = _mask_strings(code)
+    bodies = []
+    patterns = (
+        re.compile(r"\b(?:%s)\s*\.\s*(?:execute|submit|schedule(?:AtFixedRate|WithFixedDelay)?)\s*\("
+                   % _executor_receivers(masked)),
+        _CONTEXT_SCHEDULE,
+    )
+    for pattern in patterns:
+        for match in pattern.finditer(masked):
+            paren = match.end() - 1
+            if paren < 0 or code[paren] != "(":
+                continue
+            bodies.append(_task_body(_first_arg(code, paren), methods))
+    return bodies
+
+
+def _local_callees(body: str, methods: dict) -> list:
+    masked = _mask_strings(body)
+    names = set(re.findall(r"(?:this\s*\.\s*)?([A-Za-z_]\w*)\s*\(", masked))
+    names.update(re.findall(r"::\s*([A-Za-z_]\w*)", masked))
+    return [name for name in names if name in methods]
+
+
+def check_event_loop_blocking(code: str, loc: str) -> None:
+    """initialize、onMsg、getExecutor() / schedule() 回调不能 sleep、poll 或死循环。
+
+    这三处跑在节点事件循环上，同一节点串行。阻塞工作应放进 context.executeBlocking。
+    executeBlocking 和 new Thread 的参数不在这条线程上，允许等待。
+    """
+    methods = _java_methods(code)
+    plain = _strip_java_comments(code)
+    scanned = []
+    seen = set()
+
+    def consider(body: str, name: str = "") -> None:
+        if name:
+            if name in seen:
+                return
+            seen.add(name)
+        visible = _without_off_loop(_strip_java_comments(body))
+        scanned.append(visible)
+        for callee in _local_callees(visible, methods):
+            consider(methods[callee][1], callee)
+
+    for entry in ("initialize", "onMsg"):
+        if entry in methods:
+            consider(methods[entry][1], entry)
+    for task in _scheduled_task_bodies(plain, methods):
+        if task:
+            consider(task)
+
+    text = _mask_strings("\n".join(scanned))
+    found = []
+    if _EVENT_LOOP_SLEEP.search(text):
+        found.append("sleep")
+    if _EVENT_LOOP_POLL.search(text):
+        found.append("poll")
+    if _EVENT_LOOP_SPIN.search(text):
+        found.append("死循环")
+    if found:
+        err(loc, "initialize()、onMsg() 和 getExecutor() / schedule() 的回调跑在节点事件循环上，"
+                 "不能 %s（会挡住同一节点的后续消息）。阻塞工作改到 context.executeBlocking"
+            % "、".join(found))
+
+
 def check_node_code(jf: JavaFile, is_trigger: bool) -> None:
     code, loc = jf.code, jf.rel
 
@@ -918,7 +1146,9 @@ def check_node_code(jf: JavaFile, is_trigger: bool) -> None:
     if "createSandboxExecutor(" in code and ".close()" not in code:
         err(loc, "创建了 SandboxExecutor 但 destroy() 中没有 close()")
     if re.search(r"\bnew\s+Thread\s*\(", code):
-        warn(loc, "自建线程需在 destroy() 中中断并 join，建议改用 context.getExecutor()")
+        warn(loc, "自建线程需在 destroy() 中中断并 join。"
+                  "很快返回的任务用 context.getExecutor()，会 sleep、poll 或长时间阻塞的工作用 context.executeBlocking")
+    check_event_loop_blocking(code, loc)
     if "ThreadLocal" in code and ".remove()" not in code:
         warn(loc, "使用了 ThreadLocal 但没有 remove()，线程存活期间会永久持有 value")
     if re.search(r"static\s+final\s+(Map|List|Set|ConcurrentHashMap)\w*\s*<", code) \

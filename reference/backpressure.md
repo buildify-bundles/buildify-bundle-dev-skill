@@ -174,12 +174,13 @@ try {
 |------|------|------|
 | `context.tellSuccess(msg)` | 被拒收时触发器不知道 | `tryTellSuccess` 并处理 `false` |
 | `new LinkedBlockingQueue<>()`、`ConcurrentLinkedQueue`、`ArrayList` 当缓冲 | 无界，下游一慢就堆到 OOM | `new ArrayBlockingQueue<>(容量)` + `offer` |
-| `Executors.newFixedThreadPool` / `newCachedThreadPool` / `newSingleThreadExecutor` | 内部队列无界 | `context.executeBlocking` 或 `context.getExecutor()` |
+| `Executors.newFixedThreadPool` / `newCachedThreadPool` / `newSingleThreadExecutor` | 内部队列无界 | 阻塞用 `context.executeBlocking`；很快返回的任务用 `context.getExecutor()` |
+| 在 `initialize` / `onMsg` / `getExecutor()` 里 `sleep`、带超时的 `poll`、`while (true)` | 占住节点事件循环，后面的消息进不来 | 阻塞放进 `context.executeBlocking`，调度回调做完一轮就返回 |
 | `while (true) { ... tellSuccess ... }` | 以最快速度灌给下游 | 循环内 `guard.admit` + `tryTellSuccess` |
 | 一次拉完所有分页再逐条发 | 全部数据先进内存 | 每轮最多 `MAX_EVENTS_PER_TICK` 条，游标续拉 |
 | 每条事件都 `setStatus` | 高频刷状态拖慢 Worker | `TriggerGuard` 节流 |
 
-校验脚本会对前四种记 WARNING。
+校验脚本对 `tellSuccess`、无界缓冲、无界线程池、循环里直接 `tell*` 记 WARNING。事件循环上的 `sleep`、带超时的 `poll`、死循环记 ERROR。
 
 ## 使用文档怎么写
 

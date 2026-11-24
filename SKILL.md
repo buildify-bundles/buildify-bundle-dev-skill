@@ -124,6 +124,7 @@ python3 <skill-root>/scripts/scaffold_bundle.py \
 `bundle.json` 节点缺 `icon`（默认应为 `"default.svg"`）、节点图标与封面同名、
 `icons/` 下有没人引用的图片、图标文件名不合法或超过 1MB、使用文档漏列节点或凭证类型、使用文档写入了开发内容、`bundleName` 不符合平台命名规则，
 触发器用了无界队列 / 无界线程池、在循环里直接 `tell*`、用 `tellSuccess` 而不是 `tryTellSuccess`、没有任何限流，
+在 `initialize` / `onMsg` / `getExecutor()` / `schedule()` 里 `sleep`、带超时的 `poll` 或死循环，
 以及 resources 下的 SVG 记 WARNING（图标放 `icons/`，发布时平台还没有才上传，不要打进 JAR）：
 
 ```bash
@@ -164,7 +165,7 @@ Maven 依赖：`cn.buildify:buildify-bundle-api`（版本见 `templates/project/
 完整示例见 [coding-rules.md](coding-rules.md)：
 
 1. `JsonValue` 读字段用 `path()`，不用 `get()`；也不要用 `Objects.requireNonNull` 做参数校验
-2. 同步路径在 `onMsg` 返回前 `tell*` 即可，框架自动 `complete`；异步路径必须对入站 `message` 调用 `context.complete()`。触发器的新消息不在 `onMsg` 内，必须且只 `complete` 一次（用于统计触发器的执行次数与耗时，重复调用会重复计数）；特殊触发器可按说明调整调用位置，但不能省略
+2. 同步路径在 `onMsg` 返回前 `tell*` 即可，框架自动 `complete`；异步路径必须对入站 `message` 调用 `context.complete()`。触发器的新消息不在 `onMsg` 内，必须且只 `complete` 一次（用于统计触发器的执行次数与耗时，重复调用会重复计数）；特殊触发器可按说明调整调用位置，但不能省略。`initialize()`、`onMsg()` 和 `getExecutor()` / `context.schedule()` 的回调跑在节点事件循环上，不要 `sleep`、带超时的 `poll` 或死循环；阻塞工作改到 `context.executeBlocking`
 3. 在 `onMsg` 中求值的字段默认 `expression: true` + `droppable: true`（能否切换到表达式）。只在 `initialize()` 读取的参数（超时、cron、路由路径）不开。访问凭证和 `CodeEditor` 也除外：`CodeEditor` 设了会和编辑器交互冲突，只用 `typeOptions.enableExpression`；`lang` 为 `json` 时优先改用 `JsonExpressionInput`。代码侧 `dynamicParameters` + `resolveExpressions`。
    `JsonExpressionInput` 可能整字段就是 `={{msg.name}}`（文本，不是 JSON）：原样放入，**不要** `fromJson`；
    求值后按实际类型处理，文本不要直接 `toJson()` 当请求体

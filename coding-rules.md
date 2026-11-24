@@ -6,6 +6,7 @@
 
 - [规范 1：读参数用 path()](#规范-1读参数用-path绝不用-get)
 - [规范 2：异步路径必须 complete](#规范-2异步路径必须-contextcomplete同步路径框架自动收尾)
+- [事件循环上不要阻塞](#事件循环上不要-sleeppoll死循环)
 - [规范 3：dynamicParameters + resolveExpressions](#规范-3dynamicparameters--resolveexpressions)
 - [规范 4：普通节点输出放 output](#规范-4普通节点输出放-output触发器放根级)
 - [规范 5：凭证标识 PascalCase](#规范-5凭证标识-pascalcase三处逐字一致)
@@ -72,6 +73,42 @@ httpClient.sendAsync(request, BodyHandlers.ofString()).whenComplete((resp, err) 
 普通触发器在 `tellSuccess` / `tellNext` / `tellFailure` 之后立刻调用。特殊触发器按自身说明
 把 `complete` 挪到真正结束的位置（例如等待回执、批量刷出、异步回调结束），这样记录的耗时才包含
 这段等待，但不能省略。
+
+### 事件循环上不要 sleep、poll、死循环
+
+`initialize()`、`onMsg()`，以及 `context.getExecutor()` / `context.schedule()` 的回调，
+都跑在这个节点的事件循环上，同一节点的任务串行执行。在这里调用 `Thread.sleep`、
+`TimeUnit.sleep`、带超时的 `queue.poll(...)`，或写 `while (true)` / `for (;;)`，
+会挡住该节点后面的消息，定时回调也进不来。
+
+会阻塞的工作改到 `context.executeBlocking`：同步 HTTP、文件、数据库、`sleep`、带超时的轮询。
+`executeBlocking` 会把这次处理标成异步，结束路径仍要 `complete`（见上面）。
+`getExecutor()` 只用来做很快就能返回的延迟或周期调度，不要在它的任务里等待。
+
+```java
+// ❌ 占住事件循环
+public void onMsg(Context context, Message<?> message) {
+    Thread.sleep(1000);
+    Item item = queue.poll(5, TimeUnit.SECONDS);
+}
+
+// ❌ 调度回调里死循环，同节点的其他消息进不来
+context.getExecutor().schedule(() -> {
+    while (true) {
+        pollOnce();
+    }
+}, 0, TimeUnit.SECONDS);
+
+// ✅ 阻塞放进执行池，回调里再路由并 complete
+context.<Item>executeBlocking(() -> queue.poll(5, TimeUnit.SECONDS))
+    .onSuccess(item -> context.tellSuccess(buildMsg(item, message)))
+    .onFailure(e -> context.tellFailure(message, e))
+    .onComplete(() -> context.complete(message));
+```
+
+拉取型触发器不要在 `initialize()` 里自己 `while` 轮询。用 `context.schedule` 或
+`getExecutor().scheduleAtFixedRate` 每一轮拉一批就返回，真正会堵住的拉取放进
+`executeBlocking`。见 [reference/backpressure.md](reference/backpressure.md)。
 
 ## 规范 3：`dynamicParameters` + `resolveExpressions`
 

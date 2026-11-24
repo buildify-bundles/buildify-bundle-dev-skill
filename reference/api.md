@@ -174,6 +174,10 @@ context.<byte[]>executeBlocking(() -> readFile(), Duration.ofSeconds(10))
 context.executeBlocking(() -> writeToDatabase(data))
 ```
 
+`initialize()`、`onMsg()` 和下面的 `getExecutor()` / `schedule()` 回调都在节点事件循环上，
+同一节点串行执行。不要在这些地方 `Thread.sleep`、`queue.poll(timeout, unit)` 或写死循环，
+否则该节点后续消息会被堵住。这类等待放进 `executeBlocking`。
+
 ### 定时调度
 
 ```java
@@ -181,12 +185,14 @@ context.executeBlocking(() -> writeToDatabase(data))
 ScheduledFuture<?> future = context.schedule(
     () -> triggerOnce(context), "0 */5 * * * ?", "Asia/Shanghai");
 
-// 非 Cron 的延迟/周期调度；返回节点 Actor 绑定的事件循环，同节点任务串行
+// 非 Cron 的延迟/周期调度；返回节点 Actor 绑定的事件循环，同节点任务串行。
+// 回调里不要 sleep、poll 或死循环，会阻塞的一轮改到 executeBlocking
 ScheduledFuture<?> retry = context.getExecutor()
     .schedule(() -> retryOnce(context), 30, TimeUnit.SECONDS);
 ```
 
 > 两类 `ScheduledFuture` 都**必须**在 `destroy()` 中 `cancel(true)`，否则钉住 ClassLoader。
+> 回调本身也在节点事件循环上：做完这一轮就返回。`sleep`、带超时的 `poll`、`while (true)` 改到 `executeBlocking`。
 
 ### 触发器消息
 

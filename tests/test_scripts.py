@@ -226,6 +226,32 @@ WARNING_MUTATIONS = [
 ]
 
 
+EVENT_LOOP_MUTATIONS = [
+    ("sleep in onMsg",
+     f"{NODES}/MyNode.java",
+     'new FlowNodeException("MISSING_URL", "url 求值结果为空"));\n            return;',
+     'new FlowNodeException("MISSING_URL", "url 求值结果为空"));\n            Thread.sleep(50);\n            return;',
+     "不能 sleep"),
+    ("timed poll in initialize",
+     f"{NODES}/MyNode.java",
+     "this.httpClient = HttpClient.newBuilder()",
+     "new java.util.concurrent.ArrayBlockingQueue<Object>(1).poll(1, java.util.concurrent.TimeUnit.SECONDS);\n"
+     "        this.httpClient = HttpClient.newBuilder()",
+     "不能 poll"),
+    ("infinite loop on getExecutor",
+     f"{NODES}/MyTrigger.java",
+     "this.scheduledFuture = context.schedule(() -> triggerOnce(context), cron, timezone);",
+     "this.scheduledFuture = context.schedule(() -> triggerOnce(context), cron, timezone);\n"
+     "        context.getExecutor().schedule(() -> { while (true) { } }, 1, java.util.concurrent.TimeUnit.SECONDS);",
+     "死循环"),
+    ("sleep inside getExecutor lambda",
+     f"{NODES}/MyTrigger.java",
+     "this.scheduledFuture = context.schedule(() -> triggerOnce(context), cron, timezone);",
+     "this.scheduledFuture = context.getExecutor().schedule(() -> Thread.sleep(10), 1, java.util.concurrent.TimeUnit.SECONDS);",
+     "不能 sleep"),
+]
+
+
 class ValidatorMutationTest(ScriptTestCase):
 
     def mutate(self, rel: str, old: str, new: str) -> Path:
@@ -242,6 +268,88 @@ class ValidatorMutationTest(ScriptTestCase):
                 result = self.validate(self.mutate(rel, old, new))
                 self.assertEqual(result.returncode, 1, result.stdout)
                 self.assertIn(expected, result.stdout)
+
+    def test_event_loop_blocking_is_an_error(self):
+        for label, rel, old, new, expected in EVENT_LOOP_MUTATIONS:
+            with self.subTest(label):
+                result = self.validate(self.mutate(rel, old, new))
+                self.assertEqual(result.returncode, 1, result.stdout)
+                self.assertIn(expected, result.stdout)
+                self.assertIn("context.executeBlocking", result.stdout)
+
+    def test_sleep_inside_execute_blocking_is_allowed(self):
+        project = self.mutate(
+            f"{NODES}/MyNode.java",
+            'new FlowNodeException("MISSING_URL", "url 求值结果为空"));\n            return;',
+            'new FlowNodeException("MISSING_URL", "url 求值结果为空"));\n'
+            '            context.executeBlocking(() -> { Thread.sleep(50); return null; });\n'
+            '            return;')
+        result = self.validate(project, "--strict")
+        self.assertEqual(result.returncode, 0, result.stdout)
+        self.assertNotIn("事件循环", result.stdout)
+
+    def test_blocking_helper_called_from_on_msg_is_flagged(self):
+        project = self.mutate(
+            f"{NODES}/MyNode.java",
+            "    /** 幂等释放 */",
+            "    private void waitReady() {\n        while (true) {\n            Thread.sleep(10);\n        }\n    }\n\n"
+            "    /** 幂等释放 */")
+        path = project / NODES / "MyNode.java"
+        text = path.read_text(encoding="utf-8")
+        text = text.replace(
+            'new FlowNodeException("MISSING_URL", "url 求值结果为空"));\n            return;',
+            'new FlowNodeException("MISSING_URL", "url 求值结果为空"));\n            waitReady();\n            return;',
+            1)
+        path.write_text(text, encoding="utf-8")
+        result = self.validate(project)
+        self.assertEqual(result.returncode, 1, result.stdout)
+        self.assertIn("不能 sleep", result.stdout)
+        self.assertIn("死循环", result.stdout)
+
+    def test_blocking_helper_only_used_by_execute_blocking_is_allowed(self):
+        project = self.mutate(
+            f"{NODES}/MyNode.java",
+            "    /** 幂等释放 */",
+            "    private void waitReady() {\n        while (true) {\n            Thread.sleep(10);\n        }\n    }\n\n"
+            "    /** 幂等释放 */")
+        path = project / NODES / "MyNode.java"
+        text = path.read_text(encoding="utf-8")
+        text = text.replace(
+            'new FlowNodeException("MISSING_URL", "url 求值结果为空"));\n            return;',
+            'new FlowNodeException("MISSING_URL", "url 求值结果为空"));\n'
+            '            context.executeBlocking(() -> { waitReady(); return null; });\n'
+            '            return;',
+            1)
+        path.write_text(text, encoding="utf-8")
+        result = self.validate(project, "--strict")
+        self.assertEqual(result.returncode, 0, result.stdout)
+        self.assertNotIn("事件循环", result.stdout)
+
+    def test_sleeping_method_reference_on_get_executor_is_flagged(self):
+        project = self.mutate(
+            f"{NODES}/MyTrigger.java",
+            "    private void triggerOnce(Context context) {",
+            "    private void block() {\n        Thread.sleep(10);\n    }\n\n"
+            "    private void triggerOnce(Context context) {")
+        path = project / NODES / "MyTrigger.java"
+        text = path.read_text(encoding="utf-8")
+        text = text.replace(
+            "this.scheduledFuture = context.schedule(() -> triggerOnce(context), cron, timezone);",
+            "this.scheduledFuture = context.getExecutor().schedule(this::block, 1, java.util.concurrent.TimeUnit.SECONDS);")
+        path.write_text(text, encoding="utf-8")
+        result = self.validate(project)
+        self.assertEqual(result.returncode, 1, result.stdout)
+        self.assertIn("不能 sleep", result.stdout)
+
+    def test_nonblocking_poll_on_event_loop_is_allowed(self):
+        project = self.mutate(
+            f"{NODES}/MyNode.java",
+            "this.httpClient = HttpClient.newBuilder()",
+            "new java.util.concurrent.ArrayBlockingQueue<Object>(1).poll();\n"
+            "        this.httpClient = HttpClient.newBuilder()")
+        result = self.validate(project, "--strict")
+        self.assertEqual(result.returncode, 0, result.stdout)
+        self.assertNotIn("不能 poll", result.stdout)
 
     def test_warnings_fail_only_in_strict_mode(self):
         for label, rel, old, new, expected in WARNING_MUTATIONS:

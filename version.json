@@ -1,8 +1,8 @@
 {
-  "version": "1.0.2",
+  "version": "1.0.3",
   "minVersion": "1.0.0",
-  "date": "2026-11-16",
+  "date": "2026-11-24",
   "notes": [
-    "新建三方 HTTP 包时默认实现约 3–8 个常用专用节点，再加通用调用；已有包只补当前缺的节点"
+    "initialize、onMsg 和 getExecutor() 里不要 sleep、带超时的 poll 或死循环，阻塞工作改到 context.executeBlocking"
   ]
 }

@@ -48,6 +48,10 @@ destroy(context)                          ← 资源释放，必须幂等
 `destroy()` 里还要清空本地缓冲、调 `TriggerGuard.reset()`。
 联调与生产都是节点实例保持到 workflow 停止后统一 `destroy()`。
 
+`initialize()`、`onMsg()` 和 `getExecutor()` / `context.schedule()` 的回调跑在节点事件循环上。
+不要在这里 `sleep`、带超时的 `poll` 或死循环，否则同一节点后面的消息进不来。
+阻塞工作改到 `context.executeBlocking`。
+
 ## 参数热更新
 
 节点重启 = `destroy()` + `initialize()`，会丢失瞬态状态并重新申请资源。只影响内存中轻量配置的
@@ -202,7 +206,9 @@ private static final Map<String, Client> CLIENTS = new ConcurrentHashMap<>();
 
 // ❌ 自建线程未停止，且 Runnable 由 bundle 加载
 new Thread(() -> pollForever()).start();
-// ✅ 保存引用，destroy() 中中断并 join；或改用 context.getExecutor()
+// ✅ 短任务用 context.getExecutor()，destroy() 里 cancel(true)
+// ❌ 不要把 pollForever 丢给 getExecutor()：死循环会占住节点事件循环
+// ✅ 阻塞和轮询放进 context.executeBlocking，调度回调每轮返回
 
 // ❌ ThreadLocal 只 set 不 remove
 SESSION.set(session);

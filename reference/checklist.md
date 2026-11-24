@@ -27,6 +27,8 @@
       （框架在 `onMsg` 返回时自动收尾；本次 `onMsg` 未调用 `executeBlocking`）
 - [ ] 所有异步回调（`sendAsync` / `executeBlocking` / `nodeService().execute()`）在**每条**
       结束路径上都对**入站** `message` 调用了 `complete`；推荐用 `onComplete` 或 `finally` 统一收尾
+- [ ] `initialize()`、`onMsg()` 和 `getExecutor()` / `context.schedule()` 的回调里没有
+      `Thread.sleep`、带超时的 `poll` 或 `while (true)` / `for (;;)`；阻塞工作在 `context.executeBlocking` 中
 - [ ] 触发器对 `createTriggerMessage` 的新消息调用了 `context.complete`，且每条只调一次
       （框架不会自动收尾，也不去重；漏调时触发器的执行次数、QPS、耗时恒为 0，重复调用会重复计数）。
       普通触发器紧接在 `tell*` 之后；特殊触发器可按说明调整位置，但不能省略
